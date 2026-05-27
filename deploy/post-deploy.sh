@@ -32,9 +32,28 @@ fi
 
 ln -sf .env.production .env
 
+run_prisma_migrate() {
+  PATH="$(dirname "${NODE_BIN}"):${PATH}"
+  local log
+  log="$(mktemp)"
+  if ./node_modules/.bin/prisma migrate deploy 2>&1 | tee "${log}"; then
+    rm -f "${log}"
+    return 0
+  fi
+  if grep -q 'P3005' "${log}"; then
+    echo "==> Banco school_db já tem tabelas (ex.: criado antes das migrations)."
+    echo "==> Baseline: marcando 20250327000000_init como aplicada..."
+    ./node_modules/.bin/prisma migrate resolve --applied 20250327000000_init
+    rm -f "${log}"
+    ./node_modules/.bin/prisma migrate deploy
+    return $?
+  fi
+  rm -f "${log}"
+  return 1
+}
+
 echo "==> Prisma migrate deploy..."
-PATH="$(dirname "${NODE_BIN}"):${PATH}"
-./node_modules/.bin/prisma migrate deploy
+run_prisma_migrate
 
 echo "==> PM2 reload..."
 "${PM2_BIN}" reload ecosystem.config.js --env production --update-env \
