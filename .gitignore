@@ -1,0 +1,9 @@
+.env
+.env.production
+node_modules
+dist
+*.js.map
+*.d.ts
+!jest.config.js
+!ecosystem.config.js
+!prisma.config.ts

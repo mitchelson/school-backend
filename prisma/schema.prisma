@@ -1,0 +1,201 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  admin
+  aluno
+}
+
+enum UserStatus {
+  active
+  inactive
+}
+
+enum SubscriptionStatus {
+  active
+  expired
+  cancelled
+}
+
+enum ClassStatus {
+  open
+  cancelled
+  completed
+}
+
+enum EnrollmentStatus {
+  enrolled
+  confirmed
+  cancelled
+  absent
+}
+
+enum EnrollmentSource {
+  plan
+  credit
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  failed
+}
+
+enum PaymentMethod {
+  pix
+  card
+}
+
+enum PaymentPurpose {
+  plan
+  credits
+}
+
+enum NotificationType {
+  enrollment_confirmed
+  class_cancelled
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id           String     @id @default(uuid())
+  firebaseUid  String     @unique
+  fullName     String
+  email        String     @unique
+  phone        String?
+  role         Role       @default(aluno)
+  status       UserStatus @default(active)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  subscription    Subscription?
+  tokenBalance    StudentTokenBalance?
+  enrollments     ClassAttendance[]
+  payments        Payment[]
+  notifications   Notification[]
+
+  @@index([email])
+  @@index([firebaseUid])
+  @@index([status])
+}
+
+model Plan {
+  id           String   @id @default(uuid())
+  name         String
+  priceInCents Int
+  weeklyLimit  Int      // 1, 2, 3, 0 = unlimited
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  subscriptions Subscription[]
+  payments      Payment[]
+}
+
+model Subscription {
+  id                    String             @id @default(uuid())
+  studentId             String             @unique
+  planId                String
+  status                SubscriptionStatus @default(active)
+  validUntil            DateTime
+  gatewaySubscriptionId String?            // reserved for future recurring billing
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  student User @relation(fields: [studentId], references: [id])
+  plan    Plan @relation(fields: [planId], references: [id])
+
+  @@index([studentId])
+  @@index([status])
+}
+
+model StudentTokenBalance {
+  id        String   @id @default(uuid())
+  studentId String   @unique
+  balance   Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  student User @relation(fields: [studentId], references: [id])
+}
+
+model ClassInstance {
+  id              String      @id @default(uuid())
+  name            String
+  teacherName     String
+  date            DateTime    @db.Date
+  startTime       String      // HH:mm format
+  durationMinutes Int
+  maxStudents     Int
+  location        String?
+  status          ClassStatus @default(open)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  attendances ClassAttendance[]
+
+  @@index([date])
+  @@index([status])
+}
+
+model ClassAttendance {
+  id               String           @id @default(uuid())
+  studentId        String
+  classInstanceId  String
+  status           EnrollmentStatus @default(enrolled)
+  enrollmentSource EnrollmentSource
+  checkedInAt      DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  student      User          @relation(fields: [studentId], references: [id])
+  classInstance ClassInstance @relation(fields: [classInstanceId], references: [id])
+
+  @@unique([studentId, classInstanceId])
+  @@index([studentId])
+  @@index([classInstanceId])
+  @@index([status])
+}
+
+model Payment {
+  id             String         @id @default(uuid())
+  studentId      String
+  planId         String?
+  amountInCents  Int
+  status         PaymentStatus  @default(pending)
+  paymentMethod  PaymentMethod
+  purpose        PaymentPurpose
+  creditQuantity Int?
+  gateway        String         @default("mercadopago")
+  mpPaymentId    String?        @unique
+  paidAt         DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  student User  @relation(fields: [studentId], references: [id])
+  plan    Plan? @relation(fields: [planId], references: [id])
+
+  @@index([studentId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  studentId String
+  type      NotificationType
+  title     String
+  body      String
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  student User @relation(fields: [studentId], references: [id])
+
+  @@index([studentId, read])
+  @@index([createdAt])
+}
