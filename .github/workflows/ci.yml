@@ -41,9 +41,10 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - run: npx prisma generate
       - run: npx prisma migrate deploy
       - run: npm run build
-      - run: npm test --if-present
+      - run: npm test
 
   deploy:
     needs: test-and-build
@@ -53,23 +54,54 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check VPS secrets
+      - name: Verificar secrets da VPS
         id: vps
         run: |
-          if [ -z "${{ secrets.VPS_HOST }}" ] || [ -z "${{ secrets.VPS_USER }}" ]; then
+          if [ -z "${{ secrets.VPS_HOST }}" ] || [ -z "${{ secrets.VPS_USER || secrets.VPS_USERNAME }}" ]; then
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Deploy skipped — configure VPS_HOST and VPS_USER in environment ENV."
+            echo "auth=none" >> "$GITHUB_OUTPUT"
+            echo "::notice::Deploy ignorado — configure VPS_HOST e VPS_USER (ou VPS_USERNAME) no environment ENV."
             exit 0
           fi
           echo "configured=true" >> "$GITHUB_OUTPUT"
+          if [ -n "${{ secrets.VPS_SSH_KEY }}" ]; then
+            echo "auth=key" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ secrets.VPS_PASSWORD }}" ]; then
+            echo "auth=password" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "auth=none" >> "$GITHUB_OUTPUT"
+            echo "::notice::Configure VPS_SSH_KEY ou VPS_PASSWORD no environment ENV."
+          fi
 
-      - name: Deploy via SSH
-        if: steps.vps.outputs.configured == 'true'
+      - name: Deploy via SSH (chave)
+        if: steps.vps.outputs.configured == 'true' && steps.vps.outputs.auth == 'key'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
+          username: ${{ secrets.VPS_USER || secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -euo pipefail
+            cd /opt/school-backend
+            git fetch origin main
+            git reset --hard origin/main
+            npm ci
+            npx prisma generate
+            npm run build
+            npx prisma migrate deploy
+            npm prune --omit=dev
+            pm2 restart school-backend || pm2 start ecosystem.config.js
+            pm2 save
+            echo "✅ school-backend deployed ($(git rev-parse --short HEAD))"
+
+      - name: Deploy via SSH (senha)
+        if: steps.vps.outputs.configured == 'true' && steps.vps.outputs.auth == 'password'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER || secrets.VPS_USERNAME }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: ${{ secrets.VPS_PORT || 22 }}
           script: |
@@ -77,9 +109,11 @@ jobs:
             cd /opt/school-backend
             git fetch origin main
             git reset --hard origin/main
-            npm ci --omit=dev
+            npm ci
             npx prisma generate
-            npx prisma migrate deploy
             npm run build
+            npx prisma migrate deploy
+            npm prune --omit=dev
             pm2 restart school-backend || pm2 start ecosystem.config.js
+            pm2 save
             echo "✅ school-backend deployed ($(git rev-parse --short HEAD))"

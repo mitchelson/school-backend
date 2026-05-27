@@ -45,10 +45,11 @@ if [ ! -f .env.production ]; then
 fi
 
 echo "=== Instalando dependências e buildando ==="
-npm ci --omit=dev
+npm ci
 npx prisma generate
-npx prisma migrate deploy
 npm run build
+npx prisma migrate deploy
+npm prune --omit=dev
 
 echo "=== Criando diretório de logs ==="
 mkdir -p /var/log/school-backend
