@@ -16,6 +16,10 @@ Crie `/opt/school-backend/.env.production` com credenciais reais (não vai no Gi
 
 Na VPS com **dois PostgreSQL** (ex. `ct095` na 5432 e `school_db` na 5433), o `DATABASE_URL` do school deve apontar para a porta do banco **school_db** apenas.
 
+### Domínio api.ct095.com
+
+Passo a passo na VPS: **[deploy/API-DOMAIN.md](./API-DOMAIN.md)** — desativa o nginx do ct095-api nesse host e aponta para o school na porta **3002**.
+
 ### Erro P3005 (schema não vazio)
 
 Se o banco já foi criado com `db push` ou SQL manual, o `post-deploy.sh` faz **baseline** automático da migration `20250327000000_init`. Manualmente:

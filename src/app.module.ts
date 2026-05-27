@@ -17,7 +17,10 @@ import { HealthModule } from './modules/health/health.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: ['.env.production', '.env.local', '.env'],
+    }),
     PrismaModule,
     FirebaseModule,
     GatewaysModule,
