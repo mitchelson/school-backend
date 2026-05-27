@@ -1,10 +1,11 @@
-name: CI/CD
+name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
+
+# Push em main dispara deploy.yml (build + SCP), como no zenvix-store.
 
 env:
   DATABASE_URL: postgresql://school:school@localhost:5432/school_db?schema=public
@@ -45,53 +46,3 @@ jobs:
       - run: npx prisma migrate deploy
       - run: npm run build
       - run: npm test
-
-  deploy:
-    needs: test-and-build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    environment: ENV
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Verificar secrets da VPS
-        id: vps
-        run: |
-          if [ -z "${{ secrets.VPS_HOST }}" ] || [ -z "${{ secrets.VPS_USER || secrets.VPS_USERNAME }}" ]; then
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "auth=none" >> "$GITHUB_OUTPUT"
-            echo "::notice::Deploy ignorado — configure VPS_HOST e VPS_USER (ou VPS_USERNAME) no environment ENV."
-            exit 0
-          fi
-          echo "configured=true" >> "$GITHUB_OUTPUT"
-          if [ -n "${{ secrets.VPS_SSH_KEY }}" ]; then
-            echo "auth=key" >> "$GITHUB_OUTPUT"
-          elif [ -n "${{ secrets.VPS_PASSWORD }}" ]; then
-            echo "auth=password" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "auth=none" >> "$GITHUB_OUTPUT"
-            echo "::notice::Configure VPS_SSH_KEY ou VPS_PASSWORD no environment ENV."
-          fi
-
-      - name: Deploy via SSH (chave)
-        if: steps.vps.outputs.configured == 'true' && steps.vps.outputs.auth == 'key'
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER || secrets.VPS_USERNAME }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT || 22 }}
-          script: |
-            bash -lc 'export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"; [ -f "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh"; cd /opt/school-backend && git fetch origin main && git reset --hard origin/main && chmod +x deploy/remote-deploy.sh && bash deploy/remote-deploy.sh'
-
-      - name: Deploy via SSH (senha)
-        if: steps.vps.outputs.configured == 'true' && steps.vps.outputs.auth == 'password'
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER || secrets.VPS_USERNAME }}
-          password: ${{ secrets.VPS_PASSWORD }}
-          port: ${{ secrets.VPS_PORT || 22 }}
-          script: |
-            bash -lc 'export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"; [ -f "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh"; cd /opt/school-backend && git fetch origin main && git reset --hard origin/main && chmod +x deploy/remote-deploy.sh && bash deploy/remote-deploy.sh'
