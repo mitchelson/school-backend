@@ -89,7 +89,12 @@ export class PaymentCheckoutService {
       installments,
       paymentMethodId,
       deviceSessionId,
-      payer: this.buildPayer(student, payerIdentificationType, payerIdentificationNumber),
+      payer: await this.buildPayerForCheckout(
+        student,
+        studentId,
+        payerIdentificationType,
+        payerIdentificationNumber,
+      ),
       items: [
         {
           title: `Plano ${plan.name} - CT095`,
@@ -165,7 +170,12 @@ export class PaymentCheckoutService {
       installments,
       paymentMethodId,
       deviceSessionId,
-      payer: this.buildPayer(student, payerIdentificationType, payerIdentificationNumber),
+      payer: await this.buildPayerForCheckout(
+        student,
+        studentId,
+        payerIdentificationType,
+        payerIdentificationNumber,
+      ),
       items: [
         {
           title: 'Crédito avulso CT095',
@@ -261,6 +271,16 @@ export class PaymentCheckoutService {
       settlement.netReceivedInCents,
     );
 
+    const expectedPlatformFee = payment.applicationFeeInCents ?? 0;
+    if (
+      expectedPlatformFee > 0 &&
+      settlement.marketplaceFeeInCents === 0
+    ) {
+      this.logger.warn(
+        `Payment ${paymentId}: esperava marketplace_fee ~${expectedPlatformFee}c no MP, mas fee_details não reportou comissão — verifique app Marketplace e OAuth da escola`,
+      );
+    }
+
     await this.prisma.payment.update({
       where: { id: paymentId },
       data: {
@@ -299,11 +319,19 @@ export class PaymentCheckoutService {
       sellerToken,
     );
 
-    this.logger.log(
-      `Split ${paymentMethod} (${breakdown.mpFeeSource}): gross=${breakdown.grossInCents} ` +
-        `mp=${breakdown.mpFeeInCents} net=${breakdown.netAvailableInCents} ` +
-        `platform=${breakdown.applicationFeeInCents} seller=${breakdown.sellerAmountInCents}`,
-    );
+    const totalFeePercent = await this.platformSettings.getTotalFeePercent();
+    if (totalFeePercent > 0 && breakdown.applicationFeeInCents <= 0) {
+      this.logger.warn(
+        `Split ${paymentMethod}: taxa configurada ${totalFeePercent}% mas marketplace_fee=0 ` +
+          `(gross=${amountInCents}c net=${breakdown.netAvailableInCents}c seller=${breakdown.sellerAmountInCents}c)`,
+      );
+    } else if (breakdown.applicationFeeInCents > 0) {
+      this.logger.log(
+        `Split ${paymentMethod} (${breakdown.mpFeeSource}): gross=${breakdown.grossInCents} ` +
+          `mp=${breakdown.mpFeeInCents} net=${breakdown.netAvailableInCents} ` +
+          `platform=${breakdown.applicationFeeInCents} seller=${breakdown.sellerAmountInCents}`,
+      );
+    }
 
     return {
       ...breakdown,
@@ -311,6 +339,30 @@ export class PaymentCheckoutService {
         applicationFeeInCents: breakdown.applicationFeeInCents,
         sellerAccessToken: sellerToken,
       },
+    };
+  }
+
+  private async buildPayerForCheckout(
+    student: { email: string; fullName: string; phone: string | null; createdAt: Date },
+    studentId: string,
+    identificationType?: 'CPF' | 'CNPJ',
+    identificationNumber?: string,
+  ): Promise<MpPayerInput> {
+    const [approvedCount, lastPaid] = await Promise.all([
+      this.prisma.payment.count({
+        where: { studentId, status: 'paid' },
+      }),
+      this.prisma.payment.findFirst({
+        where: { studentId, status: 'paid', paidAt: { not: null } },
+        orderBy: { paidAt: 'desc' },
+        select: { paidAt: true },
+      }),
+    ]);
+
+    return {
+      ...this.buildPayer(student, identificationType, identificationNumber),
+      isFirstPurchaseOnline: approvedCount === 0,
+      lastPurchaseAt: lastPaid?.paidAt ?? undefined,
     };
   }
 

@@ -43,6 +43,8 @@ export interface PaymentSettlementSnapshot {
   /** Valor disponível após taxa MP, antes do marketplace_fee. */
   netReceivedInCents: number;
   mpFeeInCents: number;
+  /** Comissão marketplace creditada à conta da aplicação (centavos), se informada pelo MP. */
+  marketplaceFeeInCents: number;
   paymentId: string;
 }
 
@@ -66,6 +68,7 @@ export class MercadoPagoGateway {
    */
   private async createPixOrder(input: CheckoutInput): Promise<CheckoutResult> {
     const body = this.buildOrderBody(input);
+    this.logMarketplaceFeeOnOrder(body, input.paymentId);
 
     const order = await this.postOrder(
       body,
@@ -95,6 +98,7 @@ export class MercadoPagoGateway {
     if (!input.cardToken) throw new Error('Token do cartão é obrigatório');
 
     const body = this.buildOrderBody(input);
+    this.logMarketplaceFeeOnOrder(body, input.paymentId);
 
     const order = await this.postOrder(
       body,
@@ -297,11 +301,21 @@ export class MercadoPagoGateway {
       payment.net_received_amount;
     let netReceivedInCents = netRaw != null ? Math.round(Number(netRaw) * 100) : 0;
 
-    const feeDetails = (payment.fee_details ?? []) as Array<{ amount?: number }>;
+    const feeDetails = (payment.fee_details ?? []) as Array<{
+      amount?: number;
+      type?: string;
+    }>;
     const feesSum = feeDetails.reduce(
       (sum, f) => sum + Math.round(Number(f.amount ?? 0) * 100),
       0,
     );
+    const marketplaceFeeInCents = feeDetails.reduce((sum, f) => {
+      const type = (f.type ?? '').toLowerCase();
+      if (type.includes('marketplace') || type === 'application_fee') {
+        return sum + Math.round(Number(f.amount ?? 0) * 100);
+      }
+      return sum;
+    }, 0);
 
     if (!netReceivedInCents && feesSum > 0) {
       netReceivedInCents = Math.max(0, grossInCents - feesSum);
@@ -314,8 +328,20 @@ export class MercadoPagoGateway {
       grossInCents,
       netReceivedInCents,
       mpFeeInCents,
+      marketplaceFeeInCents,
       paymentId: String(payment.id ?? paymentId),
     };
+  }
+
+  private logMarketplaceFeeOnOrder(body: Record<string, unknown>, paymentId: string): void {
+    const fee = body.marketplace_fee;
+    if (fee != null && fee !== '') {
+      this.logger.log(`MP order ${paymentId}: marketplace_fee=${fee}`);
+      return;
+    }
+    this.logger.warn(
+      `MP order ${paymentId}: marketplace_fee ausente — split da plataforma não será aplicado neste pedido`,
+    );
   }
 
   private mapOrderStatus(status: string): 'approved' | 'pending' | 'rejected' {
