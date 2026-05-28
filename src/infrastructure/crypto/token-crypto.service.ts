@@ -19,8 +19,10 @@ export class TokenCryptoService {
 
   decrypt(stored: string | null | undefined): string | null {
     if (!stored) return null;
+    if (!stored.startsWith('v1:')) return stored;
+
     const key = this.getKey();
-    if (!key || !stored.startsWith('v1:')) return stored;
+    if (!key) return null;
 
     try {
       const [, ivB64, tagB64, dataB64] = stored.split(':');

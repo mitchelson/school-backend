@@ -116,9 +116,8 @@ export class MpOAuthService {
     };
   }
 
-  async buildAuthorizeUrl(): Promise<string> {
-    const admin = await this.seller.getAdminUser();
-    if (!admin) throw new BadRequestException('Administrador não encontrado');
+  async buildAuthorizeUrl(adminUserId: string): Promise<string> {
+    await this.seller.assertAdminUser(adminUserId);
 
     const appId = this.validateAppId();
     const redirectUri = this.validateRedirectUri();
@@ -127,7 +126,7 @@ export class MpOAuthService {
     const pkce = usePkce ? generatePkcePair() : null;
 
     const state = createSignedOAuthState(
-      admin.id,
+      adminUserId,
       stateSecret,
       OAUTH_STATE_TTL_MS,
       pkce?.codeVerifier,
@@ -201,6 +200,7 @@ export class MpOAuthService {
     };
 
     await this.seller.saveSellerTokens({
+      adminUserId: adminId,
       mpUserId: String(data.user_id),
       accessToken: data.access_token,
       refreshToken: data.refresh_token,

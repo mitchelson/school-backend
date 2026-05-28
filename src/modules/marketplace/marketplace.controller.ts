@@ -7,6 +7,7 @@ import { SplitCalculatorService } from './split-calculator.service';
 import { FirebaseAuthGuard } from '../../common/guards/firebase-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('marketplace/mp')
 export class MarketplaceController {
@@ -43,6 +44,7 @@ export class MarketplaceController {
         mpUserId: null,
         connectedAt: null,
         account: null,
+        connectionIssue: null,
         totalFeePercent,
         sellerNetPercent: Math.max(0, 100 - totalFeePercent),
         platformFeePercent: totalFeePercent,
@@ -62,10 +64,20 @@ export class MarketplaceController {
   @Get('oauth/authorize')
   @UseGuards(FirebaseAuthGuard, RolesGuard)
   @Roles('admin')
-  async authorize() {
-    const url = await this.oauth.buildAuthorizeUrl();
+  async authorize(@CurrentUser('id') userId: string) {
+    const status = await this.seller.getConnectionStatus();
+    if (status.connected) {
+      return {
+        alreadyConnected: true,
+        url: null,
+        account: status.account,
+      };
+    }
+
+    const url = await this.oauth.buildAuthorizeUrl(userId);
     const setup = this.oauth.getOAuthSetupHint();
     return {
+      alreadyConnected: false,
       url,
       redirectUri: setup.redirectUri,
       appIdSuffix: setup.appIdSuffix,
