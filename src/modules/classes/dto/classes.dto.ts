@@ -50,6 +50,16 @@ export class CreateClassDto {
   @Type(() => Number)
   weekdays?: number[];
 
+  /**
+   * Como o frontend envia weekdays:
+   * - iso: 1=Seg … 7=Dom
+   * - monday_zero: 0=Seg … 6=Dom (muitas UIs)
+   * Omitido: inferido (0 → monday_zero; 7 → iso; senão monday_zero)
+   */
+  @IsOptional()
+  @IsIn(['iso', 'monday_zero'])
+  weekdaysConvention?: 'iso' | 'monday_zero';
+
   @IsOptional()
   @IsInt()
   @Min(1)

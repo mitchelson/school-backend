@@ -15,8 +15,14 @@ import {
 import { MpSellerService } from '../marketplace/mp-seller.service';
 import {
   computeOccurrenceDates,
+  formatDateOnly,
+  inferWeekdaysConvention,
+  isoWeekdayFromDate,
+  normalizeWeekdaysToIso,
   parseIsoDateOnly,
   startOfDay,
+  WEEKDAY_LABELS_PT,
+  type WeekdaysConvention,
 } from './class-series.utils';
 
 type ClassRow = {
@@ -108,13 +114,18 @@ export class ClassesService {
       location: dto.location?.trim() || null,
     };
 
+    const isoWeekdays =
+      scheduleType === 'single'
+        ? []
+        : this.resolveIsoWeekdays(dto.weekdays ?? [], dto.weekdaysConvention);
+
     const seriesData =
       scheduleType === 'single'
         ? null
         : {
             ...base,
             scheduleType: scheduleType as 'weekly' | 'biweekly',
-            weekdays: dto.weekdays as Prisma.InputJsonValue,
+            weekdays: isoWeekdays as Prisma.InputJsonValue,
           };
 
     const instances = await this.prisma.$transaction(async (tx) => {
@@ -235,7 +246,7 @@ export class ClassesService {
         studentIds,
         'class_cancelled',
         'Aula cancelada',
-        `A aula ${target.name} de ${target.date.toLocaleDateString('pt-BR')} às ${target.startTime} foi cancelada.`,
+        `A aula ${target.name} de ${formatDateOnly(target.date)} às ${target.startTime} foi cancelada.`,
       );
     }
 
@@ -250,15 +261,28 @@ export class ClassesService {
       return [parseIsoDateOnly(dto.date)];
     }
 
-    const weekdays = (dto.weekdays ?? []).filter((n) => n >= 1 && n <= 7);
-    if (weekdays.length === 0) {
+    const isoWeekdays = this.resolveIsoWeekdays(
+      dto.weekdays ?? [],
+      dto.weekdaysConvention,
+    );
+    if (isoWeekdays.length === 0) {
       throw new BadRequestException(
         'Informe ao menos um dia da semana para aulas recorrentes.',
       );
     }
 
     const weeksAhead = dto.weeksAhead ?? 8;
-    return computeOccurrenceDates(scheduleType, weekdays, weeksAhead);
+    return computeOccurrenceDates(scheduleType, isoWeekdays, weeksAhead);
+  }
+
+  private resolveIsoWeekdays(
+    raw: number[],
+    convention?: WeekdaysConvention,
+  ): number[] {
+    if (raw.length === 0) return [];
+    const resolved = convention ?? inferWeekdaysConvention(raw);
+    const iso = normalizeWeekdaysToIso(raw, resolved);
+    return iso.filter((n) => n >= 1 && n <= 7);
   }
 
   /** A partir desta data (e nunca antes de hoje): aulas futuras da série. */
@@ -349,7 +373,9 @@ export class ClassesService {
       seriesId: c.seriesId,
       name: c.name,
       teacherName: c.teacherName,
-      date: c.date.toISOString().slice(0, 10),
+      date: formatDateOnly(c.date),
+      weekdayIso: isoWeekdayFromDate(c.date),
+      weekdayLabel: WEEKDAY_LABELS_PT[isoWeekdayFromDate(c.date)] ?? null,
       startTime: c.startTime,
       durationMinutes: c.durationMinutes,
       maxStudents: c.maxStudents,
@@ -362,7 +388,16 @@ export class ClassesService {
       enrollmentSource: enrollment?.enrollmentSource ?? null,
       seriesScheduleType: c.series?.scheduleType ?? null,
       seriesWeekdays: c.series?.weekdays ?? null,
+      seriesWeekdayLabels: this.weekdayLabelsFromJson(c.series?.weekdays),
     };
+  }
+
+  private weekdayLabelsFromJson(weekdays: unknown): string[] | null {
+    if (!Array.isArray(weekdays)) return null;
+    const labels = weekdays
+      .map((n) => WEEKDAY_LABELS_PT[Number(n)])
+      .filter((l): l is string => Boolean(l));
+    return labels.length > 0 ? labels : null;
   }
 
   private async ensureExists(id: string) {
