@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { ClassesService } from './classes.service';
-import { CreateClassDto, UpdateClassDto } from './dto/classes.dto';
+import { CancelClassDto, CreateClassDto, UpdateClassDto } from './dto/classes.dto';
 import { FirebaseAuthGuard } from '../../common/guards/firebase-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -41,7 +41,7 @@ export class ClassesController {
 
   @Patch(':id/cancel')
   @Roles('admin')
-  cancel(@Param('id') id: string) {
-    return this.classesService.cancel(id);
+  cancel(@Param('id') id: string, @Body() dto: CancelClassDto) {
+    return this.classesService.cancel(id, dto);
   }
 }

@@ -30,6 +30,12 @@ enum ClassStatus {
   completed
 }
 
+enum ClassScheduleType {
+  single
+  weekly
+  biweekly
+}
+
 enum EnrollmentStatus {
   enrolled
   confirmed
@@ -131,8 +137,25 @@ model StudentTokenBalance {
   student User @relation(fields: [studentId], references: [id])
 }
 
+model ClassSeries {
+  id              String            @id @default(uuid())
+  name            String
+  teacherName     String
+  startTime       String
+  durationMinutes Int
+  maxStudents     Int
+  location        String?
+  scheduleType    ClassScheduleType @default(single)
+  weekdays        Json?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  instances ClassInstance[]
+}
+
 model ClassInstance {
   id              String      @id @default(uuid())
+  seriesId        String?
   name            String
   teacherName     String
   date            DateTime    @db.Date
@@ -144,10 +167,12 @@ model ClassInstance {
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
+  series      ClassSeries?      @relation(fields: [seriesId], references: [id], onDelete: SetNull)
   attendances ClassAttendance[]
 
   @@index([date])
   @@index([status])
+  @@index([seriesId])
 }
 
 model ClassAttendance {
