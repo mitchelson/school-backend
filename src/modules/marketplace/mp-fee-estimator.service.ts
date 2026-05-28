@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { PlatformSettingsService } from './platform-settings.service';
 import { SplitPaymentMethod } from './split-calculator.service';
 
 export type MpFeeSource = 'config' | 'mp_api' | 'mp_settlement';
@@ -15,10 +15,10 @@ export class MpFeeEstimatorService {
   private readonly logger = new Logger(MpFeeEstimatorService.name);
   private readonly apiBase = 'https://api.mercadopago.com';
 
-  constructor(private config: ConfigService) {}
+  constructor(private platformSettings: PlatformSettingsService) {}
 
   /**
-   * Estimativa antes do pagamento (taxa % configurável ou API de parcelas no cartão).
+   * Estimativa antes do pagamento (taxa % do banco ou API de parcelas no cartão).
    */
   async estimate(
     grossInCents: number,
@@ -35,12 +35,11 @@ export class MpFeeEstimatorService {
       if (fromApi) return fromApi;
     }
 
-    return this.estimateFromConfig(grossInCents, paymentMethod, installments);
+    return this.estimateFromSettings(grossInCents, paymentMethod, installments);
   }
 
   /**
    * Após pagamento: deriva taxa MP do que sobrou em relação ao bruto.
-   * netReceived = valor "em mãos" após MP (antes do marketplace_fee).
    */
   fromSettlement(grossInCents: number, netReceivedInCents: number): MpFeeEstimate {
     const mpFeeInCents = Math.max(0, grossInCents - netReceivedInCents);
@@ -51,12 +50,12 @@ export class MpFeeEstimatorService {
     };
   }
 
-  estimateFromConfig(
+  async estimateFromSettings(
     grossInCents: number,
     paymentMethod: SplitPaymentMethod,
     installments = 1,
-  ): MpFeeEstimate {
-    const rate = this.getConfigRate(paymentMethod, installments);
+  ): Promise<MpFeeEstimate> {
+    const rate = await this.getConfigRate(paymentMethod, installments);
     const mpFeeInCents = Math.round((grossInCents * rate) / 100);
     return {
       mpFeeInCents,
@@ -65,14 +64,11 @@ export class MpFeeEstimatorService {
     };
   }
 
-  getConfigRate(paymentMethod: SplitPaymentMethod, installments = 1): number {
-    if (paymentMethod === 'pix') {
-      return this.readPercent('MP_FEE_PERCENT_PIX', 0.99);
-    }
-    if (installments > 1) {
-      return this.readPercent('MP_FEE_PERCENT_CARD_INSTALLMENTS', 4.98);
-    }
-    return this.readPercent('MP_FEE_PERCENT_CARD', 4.98);
+  async getConfigRate(
+    paymentMethod: SplitPaymentMethod,
+    installments = 1,
+  ): Promise<number> {
+    return this.platformSettings.getMpFeePercent(paymentMethod, installments);
   }
 
   private async tryInstallmentsFee(
@@ -123,11 +119,5 @@ export class MpFeeEstimatorService {
       this.logger.debug(`MP installments fee lookup failed: ${err}`);
       return null;
     }
-  }
-
-  private readPercent(envKey: string, fallback: number): number {
-    const raw = this.config.get<string>(envKey);
-    const n = raw != null ? parseFloat(raw) : fallback;
-    return Number.isFinite(n) && n >= 0 ? n : fallback;
   }
 }

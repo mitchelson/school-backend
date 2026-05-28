@@ -1,9 +1,28 @@
-import { IsInt, Max, Min } from 'class-validator';
+import { IsInt, IsNumber, IsOptional, Max, Min } from 'class-validator';
 
-/** Percentual total retirado do valor bruto (MP + plataforma). Mínimo recomendado: 7. */
+/** Configuração de split e taxas estimadas do Mercado Pago (owner). */
 export class UpdatePlatformFeeDto {
+  @IsOptional()
   @IsInt()
   @Min(0)
   @Max(50)
-  platformFeePercent!: number;
+  platformFeePercent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(20)
+  mpFeePercentPix?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(20)
+  mpFeePercentCard?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(20)
+  mpFeePercentCardInstallments?: number;
 }

@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Patch, Query, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { PlatformSettingsService } from '../marketplace/platform-settings.service';
 import { SplitCalculatorService } from '../marketplace/split-calculator.service';
 import { UpdatePlatformFeeDto } from './dto/platform-fee.dto';
@@ -18,16 +26,23 @@ export class PlatformController {
   @Roles('owner')
   async getFee() {
     const totalFeePercent = await this.settings.getTotalFeePercent();
+    const [mpFeePercentPix, mpFeePercentCard, mpFeePercentCardInstallments] =
+      await Promise.all([
+        this.settings.getMpFeePercentPix(),
+        this.settings.getMpFeePercentCard(),
+        this.settings.getMpFeePercentCardInstallments(),
+      ]);
+
     return {
       totalFeePercent,
       sellerNetPercent: Math.max(0, 100 - totalFeePercent),
       platformFeePercent: totalFeePercent,
-      mpFeePercentPix: this.splitCalc.getMpFeePercent('pix'),
-      mpFeePercentCard: this.splitCalc.getMpFeePercent('card'),
+      mpFeePercentPix,
+      mpFeePercentCard,
+      mpFeePercentCardInstallments,
     };
   }
 
-  /** Simula split para um valor (ex.: R$ 100) — útil no painel owner. */
   @Get('fee/preview')
   @UseGuards(FirebaseAuthGuard, RolesGuard)
   @Roles('owner')
@@ -44,13 +59,31 @@ export class PlatformController {
   @UseGuards(FirebaseAuthGuard, RolesGuard)
   @Roles('owner')
   async updateFee(@Body() dto: UpdatePlatformFeeDto) {
-    const totalFeePercent = await this.settings.setPlatformFeePercent(
-      dto.platformFeePercent,
-    );
-    return {
-      totalFeePercent,
-      sellerNetPercent: Math.max(0, 100 - totalFeePercent),
-      platformFeePercent: totalFeePercent,
-    };
+    const hasAny =
+      dto.platformFeePercent !== undefined ||
+      dto.mpFeePercentPix !== undefined ||
+      dto.mpFeePercentCard !== undefined ||
+      dto.mpFeePercentCardInstallments !== undefined;
+
+    if (!hasAny) {
+      throw new BadRequestException('Informe ao menos um campo para atualizar.');
+    }
+
+    if (dto.platformFeePercent !== undefined) {
+      await this.settings.setPlatformFeePercent(dto.platformFeePercent);
+    }
+    if (dto.mpFeePercentPix !== undefined) {
+      await this.settings.setMpFeePercentPix(dto.mpFeePercentPix);
+    }
+    if (dto.mpFeePercentCard !== undefined) {
+      await this.settings.setMpFeePercentCard(dto.mpFeePercentCard);
+    }
+    if (dto.mpFeePercentCardInstallments !== undefined) {
+      await this.settings.setMpFeePercentCardInstallments(
+        dto.mpFeePercentCardInstallments,
+      );
+    }
+
+    return this.getFee();
   }
 }

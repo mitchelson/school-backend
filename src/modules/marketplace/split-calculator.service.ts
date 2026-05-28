@@ -84,8 +84,11 @@ export class SplitCalculatorService {
     );
   }
 
-  getMpFeePercent(paymentMethod: SplitPaymentMethod, installments = 1): number {
-    return this.mpFeeEstimator.getConfigRate(paymentMethod, installments);
+  getMpFeePercent(
+    paymentMethod: SplitPaymentMethod,
+    installments = 1,
+  ): Promise<number> {
+    return this.platformSettings.getMpFeePercent(paymentMethod, installments);
   }
 
   private buildFromParts(

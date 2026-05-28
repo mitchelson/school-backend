@@ -23,13 +23,17 @@ export class MarketplaceController {
   async status() {
     const connection = await this.seller.getConnectionStatus();
     const totalFeePercent = await this.settings.getTotalFeePercent();
+    const [mpFeePercentPix, mpFeePercentCard] = await Promise.all([
+      this.splitCalc.getMpFeePercent('pix'),
+      this.splitCalc.getMpFeePercent('card'),
+    ]);
     return {
       ...connection,
       totalFeePercent,
       sellerNetPercent: Math.max(0, 100 - totalFeePercent),
       platformFeePercent: totalFeePercent,
-      mpFeePercentPix: this.splitCalc.getMpFeePercent('pix'),
-      mpFeePercentCard: this.splitCalc.getMpFeePercent('card'),
+      mpFeePercentPix,
+      mpFeePercentCard,
     };
   }
 

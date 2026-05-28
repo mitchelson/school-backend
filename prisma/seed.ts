@@ -43,6 +43,18 @@ async function main() {
     create: { key: 'credit_unit_price_cents', value: '3000' },
   });
 
+  for (const [key, value] of [
+    ['mp_fee_percent_pix', '0.99'],
+    ['mp_fee_percent_card', '4.98'],
+    ['mp_fee_percent_card_installments', '4.98'],
+  ] as const) {
+    await prisma.platformSetting.upsert({
+      where: { key },
+      update: {},
+      create: { key, value },
+    });
+  }
+
   // Plans
   const plans = [
     { name: '1x por semana', priceInCents: 12000, weeklyLimit: 1 },
