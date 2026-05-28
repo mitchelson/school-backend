@@ -17,6 +17,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { HealthModule } from './modules/health/health.module';
 import { MarketplaceModule } from './modules/marketplace/marketplace.module';
 import { PlatformModule } from './modules/platform/platform.module';
+import { OwnerModule } from './modules/owner/owner.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { PlatformModule } from './modules/platform/platform.module';
     GatewaysModule,
     MarketplaceModule,
     PlatformModule,
+    OwnerModule,
     NotificationsModule,
     AuthModule,
     StudentsModule,
