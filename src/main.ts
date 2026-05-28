@@ -4,9 +4,26 @@ import { ConfigService } from '@nestjs/config';
 import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { BetterStackNestLogger } from './infrastructure/observability/better-stack-nest.logger';
+import { createApplicationLogger } from './infrastructure/observability/create-application-logger';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const app = await NestFactory.create(AppModule, {
+    rawBody: true,
+    bufferLogs: true,
+  });
+
+  const config = app.get(ConfigService);
+  const logger = createApplicationLogger(config);
+  app.useLogger(logger);
+
+  const flushBetterStack = () => {
+    if (logger instanceof BetterStackNestLogger) {
+      void logger.flush().catch(() => undefined);
+    }
+  };
+  process.once('SIGTERM', flushBetterStack);
+  process.once('SIGINT', flushBetterStack);
 
   app.setGlobalPrefix(process.env.API_PREFIX || 'api/v1');
 
@@ -42,22 +59,26 @@ async function bootstrap() {
   app.use((req: Request, res: Response, next: NextFunction) => {
     const start = Date.now();
     res.on('finish', () => {
-      console.log(
-        `[${new Date().toISOString()}] ${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - start}ms`,
+      const durationMs = Date.now() - start;
+      if (logger instanceof BetterStackNestLogger) {
+        logger.logHttp(req.method, req.originalUrl, res.statusCode, durationMs);
+        return;
+      }
+      logger.log(
+        `${req.method} ${req.originalUrl} ${res.statusCode} ${durationMs}ms`,
+        'HTTP',
       );
     });
     next();
   });
 
-  const config = app.get(ConfigService);
   const port = Number(config.get<string>('PORT')) || 3002;
   const nodeEnv = process.env.NODE_ENV ?? 'development';
+  const apiPrefix = process.env.API_PREFIX || 'api/v1';
   await app.listen(port);
-  console.log(
-    `🚀 School API [${nodeEnv}] http://localhost:${port}/${process.env.API_PREFIX || 'api/v1'}`,
-  );
+  logger.log(`School API [${nodeEnv}] http://localhost:${port}/${apiPrefix}`, 'Bootstrap');
   if (nodeEnv === 'development' && config.get<string>('MP_DEV_SIMULATE') === 'true') {
-    console.log('   MP_DEV_SIMULATE=true — pagamentos Pix simulados');
+    logger.log('MP_DEV_SIMULATE=true — pagamentos Pix simulados', 'Bootstrap');
   }
 }
 bootstrap();

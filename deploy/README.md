@@ -42,3 +42,7 @@ cd /opt/school-backend && ln -sf .env.production .env
 ```bash
 bash /opt/school-backend/deploy/post-deploy.sh
 ```
+
+## Better Stack (logs + uptime)
+
+Ver [docs/BETTER-STACK.md](../docs/BETTER-STACK.md) — produto **CT095 School API**, separado do Zenvix.
