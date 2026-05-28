@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
 export const PLATFORM_FEE_PERCENT_KEY = 'platform_fee_percent';
@@ -159,10 +160,29 @@ export class PlatformSettingsService {
         create: { key, value },
       });
     } catch (err) {
-      this.logger.error(
-        `Falha ao gravar PlatformSetting "${key}". Confira migrations no banco. ${err}`,
+      if (!this.isPrismaClientOutdated(err)) {
+        this.logger.error(
+          `Falha ao gravar PlatformSetting "${key}". Confira migrations no banco. ${err}`,
+        );
+        throw err;
+      }
+      this.logger.warn(
+        `Prisma Client desatualizado — gravando PlatformSetting "${key}" via SQL`,
       );
-      throw err;
+      await this.prisma.$executeRaw`
+        INSERT INTO "PlatformSetting" ("key", "value", "updatedAt")
+        VALUES (${key}, ${value}, CURRENT_TIMESTAMP)
+        ON CONFLICT ("key") DO UPDATE
+        SET "value" = EXCLUDED."value", "updatedAt" = CURRENT_TIMESTAMP
+      `;
     }
+  }
+
+  private isPrismaClientOutdated(err: unknown): boolean {
+    if (err instanceof Prisma.PrismaClientValidationError) {
+      return true;
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    return /Unknown argument|platformSetting/i.test(message);
   }
 }

@@ -47,6 +47,31 @@ bash /opt/school-backend/deploy/post-deploy.sh
 
 Ver [docs/BETTER-STACK.md](../docs/BETTER-STACK.md) — produto **CT095 School API**, separado do Zenvix.
 
+## CORS / erro “Origin www.ct095.com is not allowed” + 502
+
+O navegador mostra CORS quando a API responde **502** (nginx sem headers CORS) — a causa costuma ser API reiniciando ou crash, não só CORS.
+
+No `.env.production`:
+
+```bash
+CORS_ORIGIN=https://ct095.com,https://www.ct095.com
+```
+
+O backend também aceita automaticamente a variante `www` / sem `www` de cada origem listada.
+
+Confira após deploy nos logs do PM2: linha `CORS: https://ct095.com, https://www.ct095.com, ...`.
+
+Teste:
+
+```bash
+curl -s https://api.ct095.com/api/v1/health
+curl -sI -X OPTIONS "https://api.ct095.com/api/v1/credits/pricing" \
+  -H "Origin: https://www.ct095.com" \
+  -H "Access-Control-Request-Method: PATCH"
+```
+
+Deve retornar `access-control-allow-origin: https://www.ct095.com`.
+
 ## Firebase (login em www.ct095.com)
 
 Se o console do navegador mostrar que **www.ct095.com não está autorizado para OAuth**, o admin não consegue nem chamar a API do Mercado Pago.
