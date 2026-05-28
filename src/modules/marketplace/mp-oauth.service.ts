@@ -10,8 +10,10 @@ import { MpSellerService } from './mp-seller.service';
 
 const OAUTH_STATE_TTL_MS = 15 * 60 * 1000;
 const MP_TOKEN_URL = 'https://api.mercadopago.com/oauth/token';
-/** Domínio global documentado pelo MP; .com.br também funciona no BR. */
-const DEFAULT_MP_AUTH_URL = 'https://auth.mercadopago.com/authorization';
+/** Brasil: evita tela global de seleção de país; leva direto ao login/autorização do app. */
+const DEFAULT_MP_AUTH_URL = 'https://auth.mercadopago.com.br/authorization';
+/** Global (LATAM): use só se a aplicação MP não for MLB — costuma exibir seletor de país antes. */
+const GLOBAL_MP_AUTH_URL = 'https://auth.mercadopago.com/authorization';
 
 @Injectable()
 export class MpOAuthService {
@@ -91,6 +93,21 @@ export class MpOAuthService {
       });
     }
 
+    const authUrl = this.getAuthorizationBaseUrl();
+    if (authUrl.includes('mercadopago.com.br')) {
+      checks.push({
+        ok: true,
+        message:
+          'Auth URL Brasil (.com.br) — fluxo padrão: login MP → autorizar aplicativo (sem seletor de país).',
+      });
+    } else if (authUrl.includes('auth.mercadopago.com')) {
+      checks.push({
+        ok: true,
+        message:
+          'Auth URL global — pode exibir seleção de país antes do login. Para CT095 (Brasil), prefira auth.mercadopago.com.br.',
+      });
+    }
+
     const pkceEnabled = this.isPkceEnabled();
     if (pkceEnabled) {
       checks.push({
@@ -142,6 +159,11 @@ export class MpOAuthService {
     const platformId = this.getPlatformId();
     if (platformId) {
       params.set('platform_id', platformId);
+    }
+
+    const siteId = this.getOAuthSiteId();
+    if (siteId) {
+      params.set('site_id', siteId);
     }
 
     if (pkce) {
@@ -249,9 +271,30 @@ export class MpOAuthService {
     return trimmed;
   }
 
+  private getOAuthSiteId(): string | null {
+    const raw =
+      this.config.get<string>('MERCADOPAGO_OAUTH_SITE_ID') ??
+      this.config.get<string>('MERCADOPAGO_SITE_ID');
+    if (raw === undefined || raw === '') {
+      return 'MLB';
+    }
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.toLowerCase() === 'none') {
+      return null;
+    }
+    return trimmed;
+  }
+
   private getAuthorizationBaseUrl(): string {
     const configured = this.config.get<string>('MERCADOPAGO_OAUTH_AUTH_URL')?.trim();
-    return (configured || DEFAULT_MP_AUTH_URL).replace(/\/$/, '');
+    if (configured) {
+      return configured.replace(/\/$/, '');
+    }
+    const country = this.config.get<string>('MERCADOPAGO_COUNTRY')?.trim().toUpperCase();
+    if (country && country !== 'BR' && country !== 'MLB') {
+      return GLOBAL_MP_AUTH_URL;
+    }
+    return DEFAULT_MP_AUTH_URL;
   }
 
   private normalizeRedirectUri(raw?: string): string {

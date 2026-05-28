@@ -41,7 +41,7 @@ Detalhes: [deploy/README.md](../deploy/README.md#mercado-pago-oauth-conectar-esc
 ## Teste rápido
 
 1. Abra `https://www.ct095.com/login` em aba anônima → login admin deve funcionar sem erro no console.
-2. Vá em **Configurações** → **Conectar Mercado Pago** → deve abrir `auth.mercadopago.com`.
+2. Vá em **Configurações** → **Conectar Mercado Pago** → deve abrir `auth.mercadopago.com.br` (login + tela “autorizar aplicativo”, sem seletor de país).
 3. Após autorizar, volta para `https://www.ct095.com/admin/configuracoes?mp=connected`.
 
 Admin autenticado: `GET https://api.ct095.com/api/v1/marketplace/mp/oauth/setup` — lista checks da config MP no servidor.
