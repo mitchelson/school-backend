@@ -65,6 +65,17 @@ export class MpOAuthService {
       checks.push({ ok: true, message: 'MERCADOPAGO_CLIENT_SECRET configurado' });
     }
 
+    try {
+      this.getStateSecret();
+      checks.push({ ok: true, message: 'Secret para OAuth state configurado' });
+    } catch {
+      checks.push({
+        ok: false,
+        message:
+          'Defina MERCADOPAGO_OAUTH_STATE_SECRET (≥32 chars) ou JWT_SECRET / CRON_SECRET / PII_ENCRYPTION_KEY',
+      });
+    }
+
     if (!redirectUri) {
       checks.push({ ok: false, message: 'MERCADOPAGO_OAUTH_REDIRECT_URI ausente' });
     } else if (!redirectUri.startsWith('https://')) {
@@ -288,11 +299,23 @@ export class MpOAuthService {
   }
 
   private getStateSecret(): string {
-    const secret = this.config.get<string>('JWT_SECRET')?.trim();
-    if (!secret || secret.length < 32) {
-      throw new BadRequestException('JWT_SECRET ausente ou curto demais para OAuth state.');
+    const candidates = [
+      'MERCADOPAGO_OAUTH_STATE_SECRET',
+      'JWT_SECRET',
+      'CRON_SECRET',
+      'PII_ENCRYPTION_KEY',
+    ] as const;
+
+    for (const key of candidates) {
+      const value = this.config.get<string>(key)?.trim();
+      if (value && value.length >= 32) {
+        return value;
+      }
     }
-    return secret;
+
+    throw new BadRequestException(
+      'Configure MERCADOPAGO_OAUTH_STATE_SECRET (mín. 32 caracteres) ou JWT_SECRET / CRON_SECRET / PII_ENCRYPTION_KEY com o mesmo tamanho.',
+    );
   }
 
   private looksLikeAccessToken(value: string): boolean {
