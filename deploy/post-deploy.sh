@@ -42,17 +42,12 @@ db_url_from_env() {
 
 run_sql_file() {
   local sql_file="$1"
-  local db_url
-  db_url="$(db_url_from_env)"
-  if [ -z "${db_url}" ]; then
+  if [ -z "$(db_url_from_env)" ]; then
     echo "❌ DATABASE_URL ausente para ${sql_file}"
     return 1
   fi
-  if ! command -v psql >/dev/null 2>&1; then
-    echo "❌ psql necessário para ${sql_file}"
-    return 1
-  fi
-  psql "${db_url}" -v ON_ERROR_STOP=1 -f "${sql_file}"
+  PATH="$(dirname "${NODE_BIN}"):${PATH}"
+  ./node_modules/.bin/prisma db execute --file "${sql_file}" --schema prisma/schema.prisma
 }
 
 repair_failed_migration() {
