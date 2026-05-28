@@ -55,6 +55,20 @@ Se o console do navegador mostrar que **www.ct095.com não está autorizado para
 
 Passo a passo: [docs/FIREBASE-AUTH-DOMAINS.md](../docs/FIREBASE-AUTH-DOMAINS.md).
 
+## Erro `Unknown argument mpAccountEmail` ao conectar MP
+
+O **banco** tem as colunas, mas o **Prisma Client** na VPS está velho (cache antigo do CI ou sem `prisma generate`).
+
+Na VPS:
+
+```bash
+cd /opt/school-backend && ln -sf .env.production .env
+./node_modules/.bin/prisma generate
+bash deploy/post-deploy.sh
+```
+
+Depois reconecte o Mercado Pago. Versões novas do backend também salvam via SQL se o client estiver desatualizado.
+
 ## Erro ao conectar MP: `Invalid prisma.user.update()` / coluna inexistente
 
 O OAuth do Mercado Pago pode ter funcionado, mas o **banco** ainda não tem todas as colunas `mp*` em `User`.

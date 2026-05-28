@@ -245,16 +245,31 @@ export class MercadoPagoGateway {
    * MP sends: x-signature: ts=...,v1=...
    * Manifest: id:{data.id};request-id:{x-request-id};ts:{ts};
    */
+  /**
+   * `data.id` da query string (como o MP assina). IDs alfanuméricos (ex. ORD…) vão em minúsculas.
+   */
+  resolveWebhookDataId(
+    query: Record<string, string | undefined>,
+    fallbackFromBody?: string,
+  ): string {
+    const raw = query['data.id'] ?? query['data_id'] ?? fallbackFromBody ?? '';
+    const id = String(raw).trim();
+    if (!id) return '';
+    return /[a-zA-Z]/.test(id) ? id.toLowerCase() : id;
+  }
+
   validateSignature(headers: Record<string, string | undefined>, dataId: string): boolean {
     const secret = this.config.get<string>('MERCADOPAGO_WEBHOOK_SECRET');
     if (!secret) return true; // No secret configured = skip validation (dev mode)
 
-    const xSignature = headers['x-signature'] ?? '';
-    const xRequestId = headers['x-request-id'] ?? '';
+    const normalizedHeaders = Object.fromEntries(
+      Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]),
+    );
+    const xSignature = normalizedHeaders['x-signature'] ?? '';
+    const xRequestId = normalizedHeaders['x-request-id'] ?? '';
 
-    if (!xSignature) return false;
+    if (!xSignature || !dataId) return false;
 
-    // Parse ts and v1 from x-signature header
     const parts = Object.fromEntries(
       xSignature.split(',').map((p) => {
         const [k, ...v] = p.split('=');
@@ -266,7 +281,6 @@ export class MercadoPagoGateway {
     const v1 = parts['v1'];
     if (!ts || !v1) return false;
 
-    // Build manifest and compute HMAC
     const manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`;
     const { createHmac, timingSafeEqual } = require('node:crypto');
     const computed = createHmac('sha256', secret).update(manifest).digest('hex');

@@ -96,11 +96,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: school-prod-modules-${{ hashFiles('package-lock.json') }}
+          key: school-prod-modules-${{ hashFiles('package-lock.json', 'prisma/schema.prisma') }}
 
       - name: Install production dependencies
         if: steps.vps.outputs.configured == 'true' && steps.vps.outputs.auth != 'none' && steps.cache-prod-modules.outputs.cache-hit != 'true'
         run: npm ci --omit=dev
+
+      - name: Regenerate Prisma client for deploy bundle
+        if: steps.vps.outputs.configured == 'true' && steps.vps.outputs.auth != 'none'
+        run: npx prisma generate
 
       - name: Prepare VPS directories
         if: steps.vps.outputs.configured == 'true' && steps.vps.outputs.auth == 'key'

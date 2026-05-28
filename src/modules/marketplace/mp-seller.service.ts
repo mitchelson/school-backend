@@ -243,15 +243,12 @@ export class MpSellerService {
       : null;
 
     try {
-      await this.prisma.user.update({
-        where: { id: data.adminUserId },
-        data: {
-          mpUserId,
-          mpAccessToken: encryptedAccess,
-          mpRefreshToken: encryptedRefresh,
-          mpTokenExpiresAt: expiresAt,
-          mpConnectedAt: new Date(),
-        },
+      await this.persistMpTokens(data.adminUserId, {
+        mpUserId,
+        mpAccessToken: encryptedAccess,
+        mpRefreshToken: encryptedRefresh,
+        mpTokenExpiresAt: expiresAt,
+        mpConnectedAt: new Date(),
       });
     } catch (err) {
       throw this.mapSaveTokensError(err, data.adminUserId);
@@ -259,16 +256,7 @@ export class MpSellerService {
 
     if (profile) {
       try {
-        await this.prisma.user.update({
-          where: { id: data.adminUserId },
-          data: {
-            mpAccountEmail: profile.email,
-            mpAccountNickname: profile.nickname,
-            mpAccountName: profile.accountName,
-            mpAccountSiteId: profile.siteId,
-            mpProfileSyncedAt: new Date(),
-          },
-        });
+        await this.persistMpProfile(data.adminUserId, profile);
       } catch (err) {
         this.logger.warn(
           `Tokens MP salvos, mas perfil não (${data.adminUserId}): ${
@@ -380,6 +368,87 @@ export class MpSellerService {
     } catch (err) {
       throw this.mapSaveTokensError(err, admin.id);
     }
+  }
+
+  private async persistMpTokens(
+    adminUserId: string,
+    data: {
+      mpUserId: string;
+      mpAccessToken: string;
+      mpRefreshToken: string | null;
+      mpTokenExpiresAt: Date;
+      mpConnectedAt: Date;
+    },
+  ): Promise<void> {
+    try {
+      await this.prisma.user.update({
+        where: { id: adminUserId },
+        data,
+      });
+    } catch (err) {
+      if (!this.isPrismaClientOutdated(err)) {
+        throw err;
+      }
+      this.logger.warn(
+        `Prisma Client desatualizado — salvando tokens MP via SQL (${adminUserId})`,
+      );
+      await this.prisma.$executeRaw`
+        UPDATE "User"
+        SET
+          "mpUserId" = ${data.mpUserId},
+          "mpAccessToken" = ${data.mpAccessToken},
+          "mpRefreshToken" = ${data.mpRefreshToken},
+          "mpTokenExpiresAt" = ${data.mpTokenExpiresAt},
+          "mpConnectedAt" = ${data.mpConnectedAt}
+        WHERE "id" = ${adminUserId}
+      `;
+    }
+  }
+
+  private async persistMpProfile(
+    adminUserId: string,
+    profile: {
+      email: string | null;
+      nickname: string | null;
+      accountName: string | null;
+      siteId: string | null;
+    },
+  ): Promise<void> {
+    const syncedAt = new Date();
+    try {
+      await this.prisma.user.update({
+        where: { id: adminUserId },
+        data: {
+          mpAccountEmail: profile.email,
+          mpAccountNickname: profile.nickname,
+          mpAccountName: profile.accountName,
+          mpAccountSiteId: profile.siteId,
+          mpProfileSyncedAt: syncedAt,
+        },
+      });
+    } catch (err) {
+      if (!this.isPrismaClientOutdated(err)) {
+        throw err;
+      }
+      await this.prisma.$executeRaw`
+        UPDATE "User"
+        SET
+          "mpAccountEmail" = ${profile.email},
+          "mpAccountNickname" = ${profile.nickname},
+          "mpAccountName" = ${profile.accountName},
+          "mpAccountSiteId" = ${profile.siteId},
+          "mpProfileSyncedAt" = ${syncedAt}
+        WHERE "id" = ${adminUserId}
+      `;
+    }
+  }
+
+  private isPrismaClientOutdated(err: unknown): boolean {
+    if (err instanceof Prisma.PrismaClientValidationError) {
+      return true;
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    return /Unknown argument `mp/i.test(message);
   }
 
   private mapSaveTokensError(err: unknown, adminUserId: string): BadRequestException {

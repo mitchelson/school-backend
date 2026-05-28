@@ -28,8 +28,8 @@ export class PaymentWebhookService {
 
     const externalId = parsed.externalId!;
 
-    // 2. Validate HMAC signature
-    const dataId = query['data.id'] ?? externalId;
+    // 2. Validate HMAC signature (manifest usa data.id da query; ORD… em minúsculas)
+    const dataId = this.gateway.resolveWebhookDataId(query, externalId);
     const isValid = this.gateway.validateSignature(
       headers as Record<string, string>,
       dataId,
