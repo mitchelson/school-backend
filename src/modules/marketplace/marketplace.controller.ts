@@ -42,6 +42,7 @@ export class MarketplaceController {
         connected: false,
         mpUserId: null,
         connectedAt: null,
+        account: null,
         totalFeePercent,
         sellerNetPercent: Math.max(0, 100 - totalFeePercent),
         platformFeePercent: totalFeePercent,

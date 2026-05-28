@@ -5,6 +5,7 @@ import { MpSellerService } from './mp-seller.service';
 import { PlatformSettingsService } from './platform-settings.service';
 import { SplitCalculatorService } from './split-calculator.service';
 import { MpFeeEstimatorService } from './mp-fee-estimator.service';
+import { MpAccountProfileService } from './mp-account-profile.service';
 import { TokenCryptoService } from '../../infrastructure/crypto/token-crypto.service';
 import { FirebaseAuthGuard } from '../../common/guards/firebase-auth.guard';
 
@@ -14,6 +15,7 @@ import { FirebaseAuthGuard } from '../../common/guards/firebase-auth.guard';
   providers: [
     MpSellerService,
     MpOAuthService,
+    MpAccountProfileService,
     PlatformSettingsService,
     SplitCalculatorService,
     MpFeeEstimatorService,

@@ -84,6 +84,11 @@ model User {
   mpRefreshToken     String?
   mpTokenExpiresAt   DateTime?
   mpConnectedAt      DateTime?
+  mpAccountEmail     String?
+  mpAccountNickname  String?
+  mpAccountName      String?
+  mpAccountSiteId    String?
+  mpProfileSyncedAt  DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
