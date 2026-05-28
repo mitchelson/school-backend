@@ -224,27 +224,58 @@ export class MpSellerService {
         ? expiresIn
         : DEFAULT_MP_TOKEN_TTL_SEC;
     const expiresAt = new Date(Date.now() + ttlSec * 1000);
+    if (Number.isNaN(expiresAt.getTime())) {
+      throw new BadRequestException('Resposta do Mercado Pago com expires_in inválido.');
+    }
 
     const profile = await this.mpProfile.fetchFromAccessToken(data.accessToken);
+
+    const mpUserId = (profile?.mpUserId ?? data.mpUserId)?.trim();
+    if (!mpUserId) {
+      throw new BadRequestException(
+        'Mercado Pago não retornou identificador da conta (user_id).',
+      );
+    }
+
+    const encryptedAccess = this.tokenCrypto.encrypt(data.accessToken);
+    const encryptedRefresh = data.refreshToken.trim()
+      ? this.tokenCrypto.encrypt(data.refreshToken)
+      : null;
 
     try {
       await this.prisma.user.update({
         where: { id: data.adminUserId },
         data: {
-          mpUserId: profile?.mpUserId ?? data.mpUserId,
-          mpAccessToken: this.tokenCrypto.encrypt(data.accessToken),
-          mpRefreshToken: this.tokenCrypto.encrypt(data.refreshToken),
+          mpUserId,
+          mpAccessToken: encryptedAccess,
+          mpRefreshToken: encryptedRefresh,
           mpTokenExpiresAt: expiresAt,
           mpConnectedAt: new Date(),
-          mpAccountEmail: profile?.email ?? null,
-          mpAccountNickname: profile?.nickname ?? null,
-          mpAccountName: profile?.accountName ?? null,
-          mpAccountSiteId: profile?.siteId ?? null,
-          mpProfileSyncedAt: profile ? new Date() : null,
         },
       });
     } catch (err) {
       throw this.mapSaveTokensError(err, data.adminUserId);
+    }
+
+    if (profile) {
+      try {
+        await this.prisma.user.update({
+          where: { id: data.adminUserId },
+          data: {
+            mpAccountEmail: profile.email,
+            mpAccountNickname: profile.nickname,
+            mpAccountName: profile.accountName,
+            mpAccountSiteId: profile.siteId,
+            mpProfileSyncedAt: new Date(),
+          },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Tokens MP salvos, mas perfil não (${data.adminUserId}): ${
+            err instanceof Error ? err.message : err
+          }`,
+        );
+      }
     }
 
     if (profile?.email) {
@@ -355,12 +386,25 @@ export class MpSellerService {
     if (err instanceof Prisma.PrismaClientKnownRequestError) {
       if (err.code === 'P2025') {
         return new BadRequestException(
-          `Usuário admin não encontrado (${adminUserId}). Faça login novamente e tente conectar o Mercado Pago.`,
+          `Usuário admin não encontrado (${adminUserId}). Faça logout, login de novo e conecte o Mercado Pago.`,
         );
       }
       if (err.code === 'P2022') {
         return new BadRequestException(this.missingMpColumnsMessage());
       }
+      this.logger.error(
+        `Prisma ${err.code} ao salvar MP (admin=${adminUserId}): ${err.message}`,
+      );
+      return new BadRequestException(
+        `Erro ao salvar no banco (${err.code}). Rode prisma migrate deploy e pm2 reload na VPS.`,
+      );
+    }
+
+    if (err instanceof Prisma.PrismaClientValidationError) {
+      this.logger.error(`Prisma validation (admin=${adminUserId}): ${err.message}`);
+      return new BadRequestException(
+        'Servidor desatualizado (Prisma Client). Na VPS: prisma generate && pm2 reload.',
+      );
     }
 
     const message = err instanceof Error ? err.message : String(err);
@@ -370,7 +414,7 @@ export class MpSellerService {
 
     this.logger.error(`Falha ao salvar tokens MP (admin=${adminUserId}): ${message}`);
     return new BadRequestException(
-      'Mercado Pago autorizou, mas o servidor não conseguiu salvar os tokens. Verifique migrations/schema no banco.',
+      `Não foi possível salvar os tokens: ${message.slice(0, 160)}`,
     );
   }
 

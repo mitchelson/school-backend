@@ -98,6 +98,10 @@ run_prisma_migrate() {
   return 1
 }
 
+echo "==> Prisma generate..."
+PATH="$(dirname "${NODE_BIN}"):${PATH}"
+./node_modules/.bin/prisma generate
+
 echo "==> Prisma migrate deploy..."
 run_prisma_migrate
 

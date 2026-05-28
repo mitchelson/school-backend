@@ -10,6 +10,7 @@ import { MpSellerService } from './mp-seller.service';
 
 const OAUTH_STATE_TTL_MS = 15 * 60 * 1000;
 const MP_TOKEN_URL = 'https://api.mercadopago.com/oauth/token';
+const DEFAULT_MP_TOKEN_TTL_SEC = 15552000;
 /** Brasil: evita tela global de seleção de país; leva direto ao login/autorização do app. */
 const DEFAULT_MP_AUTH_URL = 'https://auth.mercadopago.com.br/authorization';
 /** Global (LATAM): use só se a aplicação MP não for MLB — costuma exibir seletor de país antes. */
@@ -215,18 +216,32 @@ export class MpOAuthService {
     }
 
     const data = (await response.json()) as {
-      access_token: string;
-      refresh_token: string;
-      user_id: number;
-      expires_in: number;
+      access_token?: string;
+      refresh_token?: string;
+      user_id?: number;
+      expires_in?: number;
     };
+
+    const accessToken = data.access_token?.trim();
+    if (!accessToken) {
+      throw new BadRequestException(
+        'Mercado Pago não retornou access_token. Tente conectar novamente.',
+      );
+    }
+
+    const refreshToken = data.refresh_token?.trim() ?? '';
+    if (!refreshToken) {
+      this.logger.warn(
+        `MP OAuth sem refresh_token (admin=${adminId}) — tokens de acesso serão salvos.`,
+      );
+    }
 
     await this.seller.saveSellerTokens({
       adminUserId: adminId,
-      mpUserId: String(data.user_id),
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token,
-      expiresIn: data.expires_in,
+      mpUserId: String(data.user_id ?? ''),
+      accessToken,
+      refreshToken,
+      expiresIn: data.expires_in ?? DEFAULT_MP_TOKEN_TTL_SEC,
     });
 
     this.logger.log(`Mercado Pago conectado (admin=${adminId}, mp_user=${data.user_id})`);
