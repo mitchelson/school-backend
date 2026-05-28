@@ -11,6 +11,11 @@ describe('mp-oauth-state', () => {
     expect(verifySignedOAuthState(state, secret).adminId).toBe('admin-1');
   });
 
+  it('round-trips pkce verifier', () => {
+    const state = createSignedOAuthState('admin-1', secret, 60_000, 'verifier-xyz');
+    expect(verifySignedOAuthState(state, secret).pkceVerifier).toBe('verifier-xyz');
+  });
+
   it('rejects tampered state', () => {
     const state = createSignedOAuthState('admin-1', secret, 60_000);
     expect(() => verifySignedOAuthState(`${state}x`, secret)).toThrow();

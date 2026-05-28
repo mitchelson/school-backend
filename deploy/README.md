@@ -57,4 +57,9 @@ Se o MP mostrar *“não foi possível conectar o aplicativo”*:
    - `MERCADOPAGO_APP_ID` = **número** da aplicação (Client ID), não `APP_USR-…`
    - `MERCADOPAGO_CLIENT_SECRET` = Client Secret da aplicação, não Access Token
    - `MERCADOPAGO_OAUTH_REDIRECT_URI` = mesma URL do passo 1
-3. Após deploy, admin autenticado: `GET /api/v1/marketplace/mp/oauth/setup` — lista checks da configuração.
+3. No painel da aplicação **5499739331207762** (ou a sua): em **Detalhes** → se **PKCE** estiver ligado, no servidor `MERCADOPAGO_OAUTH_PKCE=true` (padrão após o último deploy).
+4. Após deploy, admin autenticado: `GET /api/v1/marketplace/mp/oauth/setup` — lista checks da configuração.
+
+**HTTP 400 em** `auth.mercadopago.com/authorization` quase sempre é:
+- redirect URI não cadastrada ou diferente da env; ou
+- PKCE obrigatório no app e `code_challenge` ausente na URL (corrigido no backend com `MERCADOPAGO_OAUTH_PKCE=true`).

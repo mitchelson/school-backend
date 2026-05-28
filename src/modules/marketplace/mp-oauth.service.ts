@@ -1,14 +1,17 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { generatePkcePair } from './mp-oauth-pkce';
 import {
   createSignedOAuthState,
+  verifyLegacySignedOAuthState,
   verifySignedOAuthState,
 } from './mp-oauth-state';
 import { MpSellerService } from './mp-seller.service';
 
 const OAUTH_STATE_TTL_MS = 15 * 60 * 1000;
 const MP_TOKEN_URL = 'https://api.mercadopago.com/oauth/token';
-const DEFAULT_MP_AUTH_URL = 'https://auth.mercadopago.com.br/authorization';
+/** Domínio global documentado pelo MP; .com.br também funciona no BR. */
+const DEFAULT_MP_AUTH_URL = 'https://auth.mercadopago.com/authorization';
 
 @Injectable()
 export class MpOAuthService {
@@ -29,6 +32,8 @@ export class MpOAuthService {
     redirectUri: string;
     appIdSuffix: string | null;
     authUrl: string;
+    pkceEnabled: boolean;
+    platformId: string | null;
     checks: { ok: boolean; message: string }[];
   } {
     const appId = this.config.get<string>('MERCADOPAGO_APP_ID')?.trim() ?? '';
@@ -75,10 +80,27 @@ export class MpOAuthService {
       });
     }
 
+    const pkceEnabled = this.isPkceEnabled();
+    if (pkceEnabled) {
+      checks.push({
+        ok: true,
+        message:
+          'PKCE ativo (MERCADOPAGO_OAUTH_PKCE). No painel MP, “authorization code + PKCE” deve estar habilitado.',
+      });
+    } else {
+      checks.push({
+        ok: true,
+        message:
+          'PKCE desligado. Se o MP retornar 400 na autorização, defina MERCADOPAGO_OAUTH_PKCE=true.',
+      });
+    }
+
     return {
       redirectUri,
       appIdSuffix: appId ? appId.slice(-4) : null,
       authUrl: this.getAuthorizationBaseUrl(),
+      pkceEnabled,
+      platformId: this.getPlatformId(),
       checks,
     };
   }
@@ -90,36 +112,44 @@ export class MpOAuthService {
     const appId = this.validateAppId();
     const redirectUri = this.validateRedirectUri();
     const stateSecret = this.getStateSecret();
+    const usePkce = this.isPkceEnabled();
+    const pkce = usePkce ? generatePkcePair() : null;
 
     const state = createSignedOAuthState(
       admin.id,
       stateSecret,
       OAUTH_STATE_TTL_MS,
+      pkce?.codeVerifier,
     );
 
     const params = new URLSearchParams({
       client_id: appId,
       response_type: 'code',
-      platform_id: 'mp',
       redirect_uri: redirectUri,
       state,
     });
 
+    const platformId = this.getPlatformId();
+    if (platformId) {
+      params.set('platform_id', platformId);
+    }
+
+    if (pkce) {
+      params.set('code_challenge', pkce.codeChallenge);
+      params.set('code_challenge_method', 'S256');
+    }
+
     const url = `${this.getAuthorizationBaseUrl()}?${params}`;
     this.logger.log(
-      `MP OAuth authorize → app=…${appId.slice(-4)} redirect_uri=${redirectUri}`,
+      `MP OAuth authorize → app=…${appId.slice(-4)} redirect_uri=${redirectUri} pkce=${usePkce}`,
     );
     return url;
   }
 
   async handleCallback(code: string, state: string): Promise<void> {
     const stateSecret = this.getStateSecret();
-    let adminId: string;
-    try {
-      adminId = verifySignedOAuthState(state, stateSecret).adminId;
-    } catch {
-      throw new BadRequestException('Sessão OAuth expirada. Tente conectar novamente.');
-    }
+    const verified = this.verifyOAuthState(state, stateSecret);
+    const adminId = verified.adminId;
 
     const secret = this.validateClientSecret();
     const appId = this.validateAppId();
@@ -132,6 +162,10 @@ export class MpOAuthService {
       code,
       redirect_uri: redirectUri,
     });
+
+    if (verified.pkceVerifier) {
+      body.set('code_verifier', verified.pkceVerifier);
+    }
 
     const response = await fetch(MP_TOKEN_URL, {
       method: 'POST',
@@ -170,6 +204,38 @@ export class MpOAuthService {
       this.config.get<string>('APP_BASE_URL')?.replace(/\/$/, '') ??
       'http://localhost:3000';
     return `${base}/admin/configuracoes?mp=${success ? 'connected' : 'error'}`;
+  }
+
+  private verifyOAuthState(
+    state: string,
+    secret: string,
+  ): { adminId: string; pkceVerifier?: string } {
+    try {
+      return verifySignedOAuthState(state, secret);
+    } catch (err) {
+      if (err instanceof Error && err.message === 'state expirado') {
+        throw new BadRequestException('Sessão OAuth expirada. Tente conectar novamente.');
+      }
+      const legacy = verifyLegacySignedOAuthState(state, secret);
+      if (legacy) {
+        return legacy;
+      }
+      throw new BadRequestException('Sessão OAuth expirada. Tente conectar novamente.');
+    }
+  }
+
+  private isPkceEnabled(): boolean {
+    const raw = this.config.get<string>('MERCADOPAGO_OAUTH_PKCE');
+    if (raw === undefined || raw === '') return true;
+    return raw.trim().toLowerCase() === 'true';
+  }
+
+  private getPlatformId(): string | null {
+    const raw = this.config.get<string>('MERCADOPAGO_OAUTH_PLATFORM_ID');
+    if (raw === undefined) return 'mp';
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.toLowerCase() === 'none') return null;
+    return trimmed;
   }
 
   private getAuthorizationBaseUrl(): string {
