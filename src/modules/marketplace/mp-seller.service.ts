@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import type { User } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { TokenCryptoService } from '../../infrastructure/crypto/token-crypto.service';
@@ -226,21 +227,25 @@ export class MpSellerService {
 
     const profile = await this.mpProfile.fetchFromAccessToken(data.accessToken);
 
-    await this.prisma.user.update({
-      where: { id: data.adminUserId },
-      data: {
-        mpUserId: profile?.mpUserId ?? data.mpUserId,
-        mpAccessToken: this.tokenCrypto.encrypt(data.accessToken),
-        mpRefreshToken: this.tokenCrypto.encrypt(data.refreshToken),
-        mpTokenExpiresAt: expiresAt,
-        mpConnectedAt: new Date(),
-        mpAccountEmail: profile?.email ?? null,
-        mpAccountNickname: profile?.nickname ?? null,
-        mpAccountName: profile?.accountName ?? null,
-        mpAccountSiteId: profile?.siteId ?? null,
-        mpProfileSyncedAt: profile ? new Date() : null,
-      },
-    });
+    try {
+      await this.prisma.user.update({
+        where: { id: data.adminUserId },
+        data: {
+          mpUserId: profile?.mpUserId ?? data.mpUserId,
+          mpAccessToken: this.tokenCrypto.encrypt(data.accessToken),
+          mpRefreshToken: this.tokenCrypto.encrypt(data.refreshToken),
+          mpTokenExpiresAt: expiresAt,
+          mpConnectedAt: new Date(),
+          mpAccountEmail: profile?.email ?? null,
+          mpAccountNickname: profile?.nickname ?? null,
+          mpAccountName: profile?.accountName ?? null,
+          mpAccountSiteId: profile?.siteId ?? null,
+          mpProfileSyncedAt: profile ? new Date() : null,
+        },
+      });
+    } catch (err) {
+      throw this.mapSaveTokensError(err, data.adminUserId);
+    }
 
     if (profile?.email) {
       this.logger.log(
@@ -329,16 +334,50 @@ export class MpSellerService {
       return admin;
     }
 
-    return this.prisma.user.update({
-      where: { id: admin.id },
-      data: {
-        mpUserId: profile.mpUserId,
-        mpAccountEmail: profile.email,
-        mpAccountNickname: profile.nickname,
-        mpAccountName: profile.accountName,
-        mpAccountSiteId: profile.siteId,
-        mpProfileSyncedAt: new Date(),
-      },
-    });
+    try {
+      return await this.prisma.user.update({
+        where: { id: admin.id },
+        data: {
+          mpUserId: profile.mpUserId,
+          mpAccountEmail: profile.email,
+          mpAccountNickname: profile.nickname,
+          mpAccountName: profile.accountName,
+          mpAccountSiteId: profile.siteId,
+          mpProfileSyncedAt: new Date(),
+        },
+      });
+    } catch (err) {
+      throw this.mapSaveTokensError(err, admin.id);
+    }
+  }
+
+  private mapSaveTokensError(err: unknown, adminUserId: string): BadRequestException {
+    if (err instanceof Prisma.PrismaClientKnownRequestError) {
+      if (err.code === 'P2025') {
+        return new BadRequestException(
+          `Usuário admin não encontrado (${adminUserId}). Faça login novamente e tente conectar o Mercado Pago.`,
+        );
+      }
+      if (err.code === 'P2022') {
+        return new BadRequestException(this.missingMpColumnsMessage());
+      }
+    }
+
+    const message = err instanceof Error ? err.message : String(err);
+    if (/column.*does not exist|Unknown column/i.test(message)) {
+      return new BadRequestException(this.missingMpColumnsMessage());
+    }
+
+    this.logger.error(`Falha ao salvar tokens MP (admin=${adminUserId}): ${message}`);
+    return new BadRequestException(
+      'Mercado Pago autorizou, mas o servidor não conseguiu salvar os tokens. Verifique migrations/schema no banco.',
+    );
+  }
+
+  private missingMpColumnsMessage(): string {
+    return (
+      'Banco desatualizado: faltam colunas Mercado Pago na tabela User. ' +
+      'Na VPS rode: cd /opt/school-backend && prisma db execute --file deploy/ensure-platform-settings.sql && prisma migrate deploy'
+    );
   }
 }

@@ -103,7 +103,10 @@ run_prisma_migrate
 
 if [ -n "$(db_url_from_env)" ]; then
   echo "==> Garantindo PlatformSetting e colunas MP no User..."
-  run_sql_file deploy/ensure-platform-settings.sql || true
+  if ! run_sql_file deploy/ensure-platform-settings.sql; then
+    echo "❌ ensure-platform-settings.sql falhou — OAuth MP não salvará tokens até corrigir o schema."
+    exit 1
+  fi
 fi
 
 echo "==> PM2 reload..."

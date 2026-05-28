@@ -55,6 +55,21 @@ Se o console do navegador mostrar que **www.ct095.com não está autorizado para
 
 Passo a passo: [docs/FIREBASE-AUTH-DOMAINS.md](../docs/FIREBASE-AUTH-DOMAINS.md).
 
+## Erro ao conectar MP: `Invalid prisma.user.update()` / coluna inexistente
+
+O OAuth do Mercado Pago pode ter funcionado, mas o **banco** ainda não tem todas as colunas `mp*` em `User`.
+
+Na VPS:
+
+```bash
+cd /opt/school-backend && ln -sf .env.production .env
+./node_modules/.bin/prisma db execute --file deploy/ensure-platform-settings.sql --schema prisma/schema.prisma
+./node_modules/.bin/prisma migrate deploy
+bash deploy/post-deploy.sh
+```
+
+Confira: `curl -s https://api.ct095.com/api/v1/health` → `schema.userMpColumns` deve ser `true`.
+
 ## Mercado Pago OAuth (conectar escola)
 
 Se o MP mostrar *“não foi possível conectar o aplicativo”*:

@@ -26,7 +26,19 @@ export class HealthController {
 
       try {
         await this.prisma.$queryRaw`
-          SELECT "mpUserId" FROM "User" LIMIT 0
+          SELECT
+            "mpUserId",
+            "mpAccessToken",
+            "mpRefreshToken",
+            "mpTokenExpiresAt",
+            "mpConnectedAt",
+            "mpAccountEmail",
+            "mpAccountNickname",
+            "mpAccountName",
+            "mpAccountSiteId",
+            "mpProfileSyncedAt"
+          FROM "User"
+          LIMIT 0
         `;
         userMpColumns = true;
       } catch {}

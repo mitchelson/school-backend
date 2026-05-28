@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { MpOAuthService } from './mp-oauth.service';
 import { MpSellerService } from './mp-seller.service';
@@ -102,7 +102,11 @@ export class MarketplaceController {
       res.redirect(this.oauth.getFrontendRedirectUrl(true));
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : 'Falha na autorização Mercado Pago';
+        err instanceof BadRequestException
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Falha na autorização Mercado Pago';
       const base = this.oauth.getFrontendRedirectUrl(false);
       res.redirect(
         `${base}&reason=${encodeURIComponent(message.slice(0, 200))}`,
