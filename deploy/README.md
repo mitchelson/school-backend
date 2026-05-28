@@ -47,6 +47,14 @@ bash /opt/school-backend/deploy/post-deploy.sh
 
 Ver [docs/BETTER-STACK.md](../docs/BETTER-STACK.md) — produto **CT095 School API**, separado do Zenvix.
 
+## Firebase (login em www.ct095.com)
+
+Se o console do navegador mostrar que **www.ct095.com não está autorizado para OAuth**, o admin não consegue nem chamar a API do Mercado Pago.
+
+**Correção:** Firebase Console → Authentication → Settings → **Authorized domains** → adicionar `www.ct095.com` e `ct095.com`.
+
+Passo a passo: [docs/FIREBASE-AUTH-DOMAINS.md](../docs/FIREBASE-AUTH-DOMAINS.md).
+
 ## Mercado Pago OAuth (conectar escola)
 
 Se o MP mostrar *“não foi possível conectar o aplicativo”*:
