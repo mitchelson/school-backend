@@ -1,10 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CreatePlanDto, UpdatePlanDto } from './dto/plans.dto';
+import { MpSellerService } from '../marketplace/mp-seller.service';
 
 @Injectable()
 export class PlansService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private mpSeller: MpSellerService,
+  ) {}
 
   async list(activeOnly: boolean) {
     return this.prisma.plan.findMany({
@@ -14,6 +18,7 @@ export class PlansService {
   }
 
   async create(dto: CreatePlanDto) {
+    await this.mpSeller.requireMpConnected();
     return this.prisma.plan.create({ data: dto });
   }
 

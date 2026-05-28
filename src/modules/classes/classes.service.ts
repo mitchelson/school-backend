@@ -2,12 +2,14 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateClassDto, UpdateClassDto } from './dto/classes.dto';
+import { MpSellerService } from '../marketplace/mp-seller.service';
 
 @Injectable()
 export class ClassesService {
   constructor(
     private prisma: PrismaService,
     private notifications: NotificationsService,
+    private mpSeller: MpSellerService,
   ) {}
 
   async list(page = 1, limit = 20, status?: string, studentId?: string) {
@@ -59,6 +61,7 @@ export class ClassesService {
   }
 
   async create(dto: CreateClassDto) {
+    await this.mpSeller.requireMpConnected();
     return this.prisma.classInstance.create({
       data: {
         name: dto.name,

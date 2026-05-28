@@ -74,6 +74,19 @@ export class PaymentsController {
     return { data, total, page: Number(page) || 1, limit: take, hasMore: skip + take < total };
   }
 
+  @Get('split-preview')
+  @UseGuards(FirebaseAuthGuard)
+  previewSplit(
+    @Query('amountInCents') amountInCents: string,
+    @Query('paymentMethod') paymentMethod?: string,
+    @Query('installments') installments?: string,
+  ) {
+    const amount = Math.max(100, parseInt(amountInCents, 10) || 0);
+    const method = paymentMethod === 'card' ? 'card' : 'pix';
+    const inst = Math.max(1, parseInt(installments ?? '1', 10) || 1);
+    return this.checkoutService.previewSplit(amount, method, inst);
+  }
+
   @Get('me/pending')
   @UseGuards(FirebaseAuthGuard)
   async myPending(@CurrentUser('id') userId: string) {

@@ -1,6 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+export interface MercadoPagoMarketplaceSplit {
+  applicationFeeInCents: number;
+  sellerAccessToken: string;
+}
+
 export interface CheckoutInput {
   paymentId: string;
   amountInCents: number;
@@ -11,6 +16,7 @@ export interface CheckoutInput {
   cardToken?: string;
   installments?: number;
   paymentMethodId?: string;
+  mercadopagoMarketplace?: MercadoPagoMarketplaceSplit;
 }
 
 export interface CheckoutResult {
@@ -25,6 +31,15 @@ export interface PaymentSnapshot {
   externalId: string;
   externalReference: string;
   status: 'approved' | 'pending' | 'rejected';
+}
+
+/** Valores reais após liquidação MP (para reconciliar split). */
+export interface PaymentSettlementSnapshot {
+  grossInCents: number;
+  /** Valor disponível após taxa MP, antes do marketplace_fee. */
+  netReceivedInCents: number;
+  mpFeeInCents: number;
+  paymentId: string;
 }
 
 @Injectable()
@@ -47,8 +62,9 @@ export class MercadoPagoGateway {
    */
   private async createPixOrder(input: CheckoutInput): Promise<CheckoutResult> {
     const amountStr = (input.amountInCents / 100).toFixed(2);
+    const marketplaceFee = this.resolveMarketplaceFee(input);
 
-    const body = {
+    const body: Record<string, unknown> = {
       type: 'online',
       processing_mode: 'automatic',
       external_reference: input.paymentId,
@@ -64,25 +80,14 @@ export class MercadoPagoGateway {
           },
         ],
       },
+      ...(marketplaceFee != null ? { marketplace_fee: marketplaceFee } : {}),
     };
 
-    const response = await fetch(`${this.apiBase}/v1/orders`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.getAccessToken()}`,
-        'X-Idempotency-Key': input.paymentId,
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      this.logger.error(`MP Orders API error ${response.status}: ${errText.slice(0, 200)}`);
-      throw new Error(`Mercado Pago retornou ${response.status}`);
-    }
-
-    const order = await response.json();
+    const order = await this.postOrder(
+      body,
+      input.paymentId,
+      input.mercadopagoMarketplace?.sellerAccessToken,
+    );
     const payment = order.transactions?.payments?.[0];
 
     if (!payment?.payment_method?.qr_code) {
@@ -105,8 +110,9 @@ export class MercadoPagoGateway {
     if (!input.cardToken) throw new Error('Token do cartão é obrigatório');
 
     const amountStr = (input.amountInCents / 100).toFixed(2);
+    const marketplaceFee = this.resolveMarketplaceFee(input);
 
-    const body = {
+    const body: Record<string, unknown> = {
       type: 'online',
       processing_mode: 'automatic',
       external_reference: input.paymentId,
@@ -126,25 +132,14 @@ export class MercadoPagoGateway {
           },
         ],
       },
+      ...(marketplaceFee != null ? { marketplace_fee: marketplaceFee } : {}),
     };
 
-    const response = await fetch(`${this.apiBase}/v1/orders`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.getAccessToken()}`,
-        'X-Idempotency-Key': input.paymentId,
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      this.logger.error(`MP Orders API error ${response.status}: ${errText.slice(0, 200)}`);
-      throw new Error(`Mercado Pago retornou ${response.status}`);
-    }
-
-    const order = await response.json();
+    const order = await this.postOrder(
+      body,
+      input.paymentId,
+      input.mercadopagoMarketplace?.sellerAccessToken,
+    );
     const payment = order.transactions?.payments?.[0];
 
     const payStatus = (payment?.status ?? '').toLowerCase();
@@ -160,6 +155,26 @@ export class MercadoPagoGateway {
   /**
    * Fetch payment status from MP API (used during webhook processing to confirm).
    */
+  /**
+   * Busca taxas reais do pagamento (GET payment ou payment dentro da order).
+   * net_received ≈ valor "em mãos" após MP descontar a taxa de processamento.
+   */
+  async fetchPaymentSettlement(
+    externalId: string,
+    bearerToken?: string,
+  ): Promise<PaymentSettlementSnapshot | null> {
+    try {
+      const token = bearerToken?.trim() || this.getAccessToken();
+      if (externalId.startsWith('ORD')) {
+        return this.fetchOrderSettlement(externalId, token);
+      }
+      return this.fetchPaymentSettlementById(externalId, token);
+    } catch (err) {
+      this.logger.warn(`Settlement fetch failed for ${externalId}: ${err}`);
+      return null;
+    }
+  }
+
   async fetchPaymentStatus(externalId: string): Promise<PaymentSnapshot> {
     const isOrder = externalId.startsWith('ORD');
     const url = isOrder
@@ -269,10 +284,102 @@ export class MercadoPagoGateway {
     return 'pending';
   }
 
+  private async fetchOrderSettlement(
+    orderId: string,
+    token: string,
+  ): Promise<PaymentSettlementSnapshot | null> {
+    const response = await fetch(`${this.apiBase}/v1/orders/${orderId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+    if (!response.ok) return null;
+
+    const order = (await response.json()) as Record<string, any>;
+    const payId = order.transactions?.payments?.[0]?.id;
+    if (!payId) return null;
+
+    return this.fetchPaymentSettlementById(String(payId), token);
+  }
+
+  private async fetchPaymentSettlementById(
+    paymentId: string,
+    token: string,
+  ): Promise<PaymentSettlementSnapshot | null> {
+    const response = await fetch(`${this.apiBase}/v1/payments/${paymentId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+    if (!response.ok) return null;
+
+    const payment = (await response.json()) as Record<string, any>;
+    const gross = Number(payment.transaction_amount ?? 0);
+    if (!gross) return null;
+
+    const grossInCents = Math.round(gross * 100);
+    const netRaw =
+      payment.transaction_details?.net_received_amount ??
+      payment.net_received_amount;
+    let netReceivedInCents = netRaw != null ? Math.round(Number(netRaw) * 100) : 0;
+
+    const feeDetails = (payment.fee_details ?? []) as Array<{ amount?: number }>;
+    const feesSum = feeDetails.reduce(
+      (sum, f) => sum + Math.round(Number(f.amount ?? 0) * 100),
+      0,
+    );
+
+    if (!netReceivedInCents && feesSum > 0) {
+      netReceivedInCents = Math.max(0, grossInCents - feesSum);
+    }
+    if (!netReceivedInCents) return null;
+
+    const mpFeeInCents = Math.max(0, grossInCents - netReceivedInCents);
+
+    return {
+      grossInCents,
+      netReceivedInCents,
+      mpFeeInCents,
+      paymentId: String(payment.id ?? paymentId),
+    };
+  }
+
   private mapOrderStatus(status: string): 'approved' | 'pending' | 'rejected' {
     if (status === 'processed') return 'approved';
     if (status === 'cancelled' || status === 'expired' || status === 'reverted') return 'rejected';
     return 'pending';
+  }
+
+  private resolveMarketplaceFee(input: CheckoutInput): string | null {
+    const split = input.mercadopagoMarketplace;
+    if (!split || split.applicationFeeInCents <= 0) return null;
+    if (!split.sellerAccessToken?.trim()) {
+      throw new Error('Split Mercado Pago exige token do vendedor (admin conectado).');
+    }
+    return (split.applicationFeeInCents / 100).toFixed(2);
+  }
+
+  private async postOrder(
+    body: Record<string, unknown>,
+    idempotencyKey: string,
+    sellerAccessToken?: string,
+  ): Promise<Record<string, any>> {
+    const bearer = sellerAccessToken?.trim() || this.getAccessToken();
+    const response = await fetch(`${this.apiBase}/v1/orders`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${bearer}`,
+        'X-Idempotency-Key': idempotencyKey,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      this.logger.error(`MP Orders API error ${response.status}: ${errText.slice(0, 200)}`);
+      throw new Error(`Mercado Pago retornou ${response.status}`);
+    }
+
+    return response.json();
   }
 
   private getAccessToken(): string {

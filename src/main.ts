@@ -51,7 +51,13 @@ async function bootstrap() {
 
   const config = app.get(ConfigService);
   const port = Number(config.get<string>('PORT')) || 3002;
+  const nodeEnv = process.env.NODE_ENV ?? 'development';
   await app.listen(port);
-  console.log(`🚀 School API running on port ${port}`);
+  console.log(
+    `🚀 School API [${nodeEnv}] http://localhost:${port}/${process.env.API_PREFIX || 'api/v1'}`,
+  );
+  if (nodeEnv === 'development' && config.get<string>('MP_DEV_SIMULATE') === 'true') {
+    console.log('   MP_DEV_SIMULATE=true — pagamentos Pix simulados');
+  }
 }
 bootstrap();

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { getEnvFilePaths } from './config/env-files';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { FirebaseModule } from './infrastructure/firebase/firebase.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -14,16 +15,20 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { HealthModule } from './modules/health/health.module';
+import { MarketplaceModule } from './modules/marketplace/marketplace.module';
+import { PlatformModule } from './modules/platform/platform.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env.production', '.env.local', '.env'],
+      envFilePath: getEnvFilePaths(),
     }),
     PrismaModule,
     FirebaseModule,
     GatewaysModule,
+    MarketplaceModule,
+    PlatformModule,
     NotificationsModule,
     AuthModule,
     StudentsModule,

@@ -90,6 +90,11 @@ export class PaymentWebhookService {
     gatewayStatus: 'approved' | 'pending' | 'rejected',
   ): Promise<{ message: string }> {
     if (gatewayStatus === 'approved') {
+      const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+      const externalId = payment?.mpPaymentId;
+      if (externalId) {
+        await this.checkoutService.reconcileFeesFromMercadoPago(paymentId, externalId);
+      }
       await this.checkoutService.fulfillPayment(paymentId);
       this.logger.log(`Payment ${paymentId} confirmed and fulfilled`);
       return { message: 'pagamento confirmado' };

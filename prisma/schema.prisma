@@ -8,6 +8,7 @@ datasource db {
 }
 
 enum Role {
+  owner
   admin
   aluno
 }
@@ -72,6 +73,11 @@ model User {
   phone        String?
   role         Role       @default(aluno)
   status       UserStatus @default(active)
+  mpUserId           String?
+  mpAccessToken      String?
+  mpRefreshToken     String?
+  mpTokenExpiresAt   DateTime?
+  mpConnectedAt      DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
@@ -173,10 +179,15 @@ model Payment {
   purpose        PaymentPurpose
   creditQuantity Int?
   gateway        String         @default("mercadopago")
-  mpPaymentId    String?        @unique
-  paidAt         DateTime?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  mpPaymentId           String?        @unique
+  applicationFeeInCents Int?
+  mpFeeInCents          Int?
+  netAvailableInCents   Int?
+  sellerAmountInCents   Int?
+  feeReconciledAt       DateTime?
+  paidAt                DateTime?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
 
   student User  @relation(fields: [studentId], references: [id])
   plan    Plan? @relation(fields: [planId], references: [id])
@@ -184,6 +195,12 @@ model Payment {
   @@index([studentId])
   @@index([status])
   @@index([createdAt])
+}
+
+model PlatformSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }
 
 model Notification {

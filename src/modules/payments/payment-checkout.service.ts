@@ -2,8 +2,9 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { MercadoPagoGateway } from '../../infrastructure/gateways/mercadopago/mercadopago.gateway';
-
-const CREDIT_UNIT_PRICE_CENTS = 3000; // R$30 per credit
+import { MpSellerService } from '../marketplace/mp-seller.service';
+import { PlatformSettingsService } from '../marketplace/platform-settings.service';
+import { SplitCalculatorService } from '../marketplace/split-calculator.service';
 
 @Injectable()
 export class PaymentCheckoutService {
@@ -13,7 +14,32 @@ export class PaymentCheckoutService {
     private prisma: PrismaService,
     private gateway: MercadoPagoGateway,
     private config: ConfigService,
+    private mpSeller: MpSellerService,
+    private platformSettings: PlatformSettingsService,
+    private splitCalculator: SplitCalculatorService,
   ) {}
+
+  /** Prévia do split para o aluno antes de pagar (não cria pagamento). */
+  async previewSplit(amountInCents: number, paymentMethod: 'pix' | 'card', installments = 1) {
+    let sellerToken: string | undefined;
+    try {
+      sellerToken = await this.mpSeller.getSellerAccessToken();
+    } catch {
+      sellerToken = undefined;
+    }
+
+    const breakdown = await this.splitCalculator.calculate(
+      amountInCents,
+      paymentMethod,
+      installments,
+      sellerToken,
+    );
+
+    return {
+      ...breakdown,
+      estimated: breakdown.mpFeeSource !== 'mp_settlement',
+    };
+  }
 
   async subscribeToPlan(
     studentId: string,
@@ -31,24 +57,27 @@ export class PaymentCheckoutService {
     const student = await this.prisma.user.findUnique({ where: { id: studentId } });
     if (!student) throw new BadRequestException('Aluno não encontrado');
 
-    // Create payment record
+    const split = await this.buildSplit(plan.priceInCents, paymentMethod, installments);
+
     const payment = await this.prisma.payment.create({
       data: {
         studentId,
         planId,
         amountInCents: plan.priceInCents,
+        applicationFeeInCents: split.applicationFeeInCents,
+        mpFeeInCents: split.mpFeeInCents,
+        netAvailableInCents: split.netAvailableInCents,
+        sellerAmountInCents: split.sellerAmountInCents,
         paymentMethod,
         purpose: 'plan',
         status: 'pending',
       },
     });
 
-    // Dev simulate mode
     if (this.isDevSimulate()) {
       return this.devSimulateResponse(payment.id);
     }
 
-    // Call Mercado Pago
     const result = await this.gateway.createCheckout({
       paymentId: payment.id,
       amountInCents: plan.priceInCents,
@@ -59,6 +88,7 @@ export class PaymentCheckoutService {
       cardToken,
       installments,
       paymentMethodId,
+      mercadopagoMarketplace: split.marketplace,
     });
 
     // Save external ID
@@ -92,12 +122,18 @@ export class PaymentCheckoutService {
     const student = await this.prisma.user.findUnique({ where: { id: studentId } });
     if (!student) throw new BadRequestException('Aluno não encontrado');
 
-    const amountInCents = quantity * CREDIT_UNIT_PRICE_CENTS;
+    const unitPrice = await this.platformSettings.getCreditUnitPriceCents();
+    const amountInCents = quantity * unitPrice;
+    const split = await this.buildSplit(amountInCents, paymentMethod, installments);
 
     const payment = await this.prisma.payment.create({
       data: {
         studentId,
         amountInCents,
+        applicationFeeInCents: split.applicationFeeInCents,
+        mpFeeInCents: split.mpFeeInCents,
+        netAvailableInCents: split.netAvailableInCents,
+        sellerAmountInCents: split.sellerAmountInCents,
         paymentMethod,
         purpose: 'credits',
         creditQuantity: quantity,
@@ -119,6 +155,7 @@ export class PaymentCheckoutService {
       cardToken,
       installments,
       paymentMethodId,
+      mercadopagoMarketplace: split.marketplace,
     });
 
     await this.prisma.payment.update({
@@ -181,6 +218,81 @@ export class PaymentCheckoutService {
     });
 
     this.logger.log(`Payment ${paymentId} fulfilled (${payment.purpose})`);
+  }
+
+  /**
+   * Após aprovação no MP: lê taxa real e atualiza split gravado (auditoria).
+   */
+  async reconcileFeesFromMercadoPago(paymentId: string, externalId: string) {
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!payment) return;
+
+    const sellerToken = await this.mpSeller.getSellerAccessToken();
+    const settlement = await this.gateway.fetchPaymentSettlement(
+      externalId,
+      sellerToken,
+    );
+    if (!settlement) {
+      this.logger.debug(`No settlement data for payment ${paymentId}`);
+      return;
+    }
+
+    const breakdown = await this.splitCalculator.calculateFromNetReceived(
+      settlement.grossInCents,
+      settlement.netReceivedInCents,
+    );
+
+    await this.prisma.payment.update({
+      where: { id: paymentId },
+      data: {
+        mpFeeInCents: breakdown.mpFeeInCents,
+        netAvailableInCents: breakdown.netAvailableInCents,
+        applicationFeeInCents: breakdown.applicationFeeInCents,
+        sellerAmountInCents: breakdown.sellerAmountInCents,
+        feeReconciledAt: new Date(),
+      },
+    });
+
+    const estMp = payment.mpFeeInCents ?? 0;
+    const delta = breakdown.mpFeeInCents - estMp;
+    if (Math.abs(delta) > 1) {
+      this.logger.warn(
+        `Payment ${paymentId}: MP fee reconciled ${estMp} → ${breakdown.mpFeeInCents} cents (Δ${delta})`,
+      );
+    } else {
+      this.logger.log(
+        `Payment ${paymentId}: fees reconciled (mp=${breakdown.mpFeeInCents}, platform=${breakdown.applicationFeeInCents})`,
+      );
+    }
+  }
+
+  private async buildSplit(
+    amountInCents: number,
+    paymentMethod: 'pix' | 'card',
+    installments?: number,
+  ) {
+    await this.mpSeller.requireMpConnected();
+    const sellerToken = await this.mpSeller.getSellerAccessToken();
+    const breakdown = await this.splitCalculator.calculate(
+      amountInCents,
+      paymentMethod,
+      installments,
+      sellerToken,
+    );
+
+    this.logger.log(
+      `Split ${paymentMethod} (${breakdown.mpFeeSource}): gross=${breakdown.grossInCents} ` +
+        `mp=${breakdown.mpFeeInCents} net=${breakdown.netAvailableInCents} ` +
+        `platform=${breakdown.applicationFeeInCents} seller=${breakdown.sellerAmountInCents}`,
+    );
+
+    return {
+      ...breakdown,
+      marketplace: {
+        applicationFeeInCents: breakdown.applicationFeeInCents,
+        sellerAccessToken: sellerToken,
+      },
+    };
   }
 
   private isDevSimulate(): boolean {
