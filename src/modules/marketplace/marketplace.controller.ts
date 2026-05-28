@@ -21,20 +21,34 @@ export class MarketplaceController {
   @UseGuards(FirebaseAuthGuard, RolesGuard)
   @Roles('admin')
   async status() {
-    const connection = await this.seller.getConnectionStatus();
-    const totalFeePercent = await this.settings.getTotalFeePercent();
-    const [mpFeePercentPix, mpFeePercentCard] = await Promise.all([
-      this.splitCalc.getMpFeePercent('pix'),
-      this.splitCalc.getMpFeePercent('card'),
-    ]);
-    return {
-      ...connection,
-      totalFeePercent,
-      sellerNetPercent: Math.max(0, 100 - totalFeePercent),
-      platformFeePercent: totalFeePercent,
-      mpFeePercentPix,
-      mpFeePercentCard,
-    };
+    try {
+      const connection = await this.seller.getConnectionStatus();
+      const totalFeePercent = await this.settings.getTotalFeePercent();
+      const [mpFeePercentPix, mpFeePercentCard] = await Promise.all([
+        this.splitCalc.getMpFeePercent('pix'),
+        this.splitCalc.getMpFeePercent('card'),
+      ]);
+      return {
+        ...connection,
+        totalFeePercent,
+        sellerNetPercent: Math.max(0, 100 - totalFeePercent),
+        platformFeePercent: totalFeePercent,
+        mpFeePercentPix,
+        mpFeePercentCard,
+      };
+    } catch {
+      const totalFeePercent = await this.settings.getTotalFeePercent().catch(() => 7);
+      return {
+        connected: false,
+        mpUserId: null,
+        connectedAt: null,
+        totalFeePercent,
+        sellerNetPercent: Math.max(0, 100 - totalFeePercent),
+        platformFeePercent: totalFeePercent,
+        mpFeePercentPix: 0.99,
+        mpFeePercentCard: 4.98,
+      };
+    }
   }
 
   @Get('oauth/authorize')

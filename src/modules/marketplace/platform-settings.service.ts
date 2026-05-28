@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
@@ -15,6 +15,8 @@ const DEFAULT_MP_FEE_CARD_INSTALLMENTS = 4.98;
 
 @Injectable()
 export class PlatformSettingsService {
+  private readonly logger = new Logger(PlatformSettingsService.name);
+
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
@@ -108,18 +110,32 @@ export class PlatformSettingsService {
   }
 
   private async readIntKey(key: string): Promise<number | null> {
-    const row = await this.prisma.platformSetting.findUnique({ where: { key } });
-    if (!row) return null;
-    const n = parseInt(row.value, 10);
-    return Number.isFinite(n) ? n : null;
+    try {
+      const row = await this.prisma.platformSetting.findUnique({ where: { key } });
+      if (!row) return null;
+      const n = parseInt(row.value, 10);
+      return Number.isFinite(n) ? n : null;
+    } catch (err) {
+      this.logger.warn(
+        `Falha ao ler PlatformSetting "${key}" — rode prisma migrate deploy na VPS. ${err}`,
+      );
+      return null;
+    }
   }
 
   private async readDecimalKey(key: string): Promise<number | null> {
-    const row = await this.prisma.platformSetting.findUnique({ where: { key } });
-    if (!row) return null;
-    const n = parseFloat(row.value);
-    if (!Number.isFinite(n) || n < 0 || n > 100) return null;
-    return Math.round(n * 100) / 100;
+    try {
+      const row = await this.prisma.platformSetting.findUnique({ where: { key } });
+      if (!row) return null;
+      const n = parseFloat(row.value);
+      if (!Number.isFinite(n) || n < 0 || n > 100) return null;
+      return Math.round(n * 100) / 100;
+    } catch (err) {
+      this.logger.warn(
+        `Falha ao ler PlatformSetting "${key}" — rode prisma migrate deploy na VPS. ${err}`,
+      );
+      return null;
+    }
   }
 
   private async writeDecimalKey(
@@ -136,10 +152,17 @@ export class PlatformSettingsService {
   }
 
   private async upsertKey(key: string, value: string) {
-    await this.prisma.platformSetting.upsert({
-      where: { key },
-      update: { value },
-      create: { key, value },
-    });
+    try {
+      await this.prisma.platformSetting.upsert({
+        where: { key },
+        update: { value },
+        create: { key, value },
+      });
+    } catch (err) {
+      this.logger.error(
+        `Falha ao gravar PlatformSetting "${key}". Confira migrations no banco. ${err}`,
+      );
+      throw err;
+    }
   }
 }

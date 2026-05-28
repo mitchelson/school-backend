@@ -1,9 +1,11 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { TokenCryptoService } from '../../infrastructure/crypto/token-crypto.service';
 
 @Injectable()
 export class MpSellerService {
+  private readonly logger = new Logger(MpSellerService.name);
+
   constructor(
     private prisma: PrismaService,
     private tokenCrypto: TokenCryptoService,
@@ -29,15 +31,22 @@ export class MpSellerService {
   }
 
   async getConnectionStatus() {
-    const admin = await this.getAdminUser();
-    if (!admin) {
+    try {
+      const admin = await this.getAdminUser();
+      if (!admin) {
+        return { connected: false, mpUserId: null, connectedAt: null };
+      }
+      return {
+        connected: this.isMpConnected(admin),
+        mpUserId: admin.mpUserId,
+        connectedAt: admin.mpConnectedAt?.toISOString() ?? null,
+      };
+    } catch (err) {
+      this.logger.error(
+        `getConnectionStatus falhou — migrations MP no User ou banco indisponível. ${err}`,
+      );
       return { connected: false, mpUserId: null, connectedAt: null };
     }
-    return {
-      connected: this.isMpConnected(admin),
-      mpUserId: admin.mpUserId,
-      connectedAt: admin.mpConnectedAt?.toISOString() ?? null,
-    };
   }
 
   async requireMpConnected(): Promise<void> {

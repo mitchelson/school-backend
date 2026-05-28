@@ -55,6 +55,18 @@ run_prisma_migrate() {
 echo "==> Prisma migrate deploy..."
 run_prisma_migrate
 
+if [ -n "${DATABASE_URL:-}" ] || grep -q '^DATABASE_URL=' .env.production 2>/dev/null; then
+  echo "==> Garantindo PlatformSetting e colunas MP no User..."
+  if command -v psql >/dev/null 2>&1; then
+    DB_URL="$(grep '^DATABASE_URL=' .env.production | cut -d= -f2- | tr -d '"')"
+    if [ -n "${DB_URL}" ]; then
+      psql "${DB_URL}" -v ON_ERROR_STOP=1 -f deploy/ensure-platform-settings.sql || true
+    fi
+  else
+    echo "   (psql não instalado — pule se migrations já aplicaram marketplace_mp)"
+  fi
+fi
+
 echo "==> PM2 reload..."
 "${PM2_BIN}" reload ecosystem.config.js --env production --update-env \
   || "${PM2_BIN}" start ecosystem.config.js --env production
