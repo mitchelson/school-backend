@@ -9,8 +9,13 @@ export class NotificationsController {
   constructor(private notificationsService: NotificationsService) {}
 
   @Get('me')
-  getUnread(@CurrentUser('id') userId: string) {
-    return this.notificationsService.getUnread(userId);
+  list(@CurrentUser('id') userId: string) {
+    return this.notificationsService.listForStudent(userId);
+  }
+
+  @Get('me/unread-count')
+  unreadCount(@CurrentUser('id') userId: string) {
+    return this.notificationsService.getUnreadCount(userId).then((count) => ({ count }));
   }
 
   @Patch(':id/read')

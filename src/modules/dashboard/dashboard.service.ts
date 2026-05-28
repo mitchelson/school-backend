@@ -32,13 +32,23 @@ export class DashboardService {
 
     const weeklyLimit = subscription?.plan.weeklyLimit ?? null;
 
+    const pendingPayments = await this.prisma.payment.count({
+      where: { studentId, status: 'pending' },
+    });
+
     return {
       subscription: subscriptionData,
       creditBalance: tokenBalance?.balance ?? 0,
       upcomingClasses,
       weeklyUsage: {
         used: weeklyCount,
-        limit: weeklyLimit === 0 ? null : weeklyLimit, // 0 = unlimited → null
+        limit: weeklyLimit === 0 ? null : weeklyLimit,
+      },
+      paymentAlerts: {
+        pendingCount: pendingPayments,
+        subscriptionExpired: subscriptionData?.status === 'expired',
+        subscriptionExpiringSoon:
+          subscriptionData?.status === 'active' && (subscriptionData?.daysRemaining ?? 99) <= 5,
       },
     };
   }
@@ -54,6 +64,8 @@ export class DashboardService {
       upcomingClasses,
       expiredSubs,
       monthlyRevenue,
+      overduePayments,
+      revenueByPurpose,
     ] = await Promise.all([
       this.prisma.user.count({ where: { role: 'aluno', status: 'active' } }),
       this.prisma.subscription.groupBy({
@@ -72,6 +84,16 @@ export class DashboardService {
         include: { student: { select: { fullName: true } } },
       }),
       this.prisma.payment.aggregate({
+        where: { status: 'paid', paidAt: { gte: monthStart } },
+        _sum: { amountInCents: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: { status: 'pending', createdAt: { lt: new Date(now.getTime() - 24 * 60 * 60 * 1000) } },
+        _count: true,
+        _sum: { amountInCents: true },
+      }),
+      this.prisma.payment.groupBy({
+        by: ['purpose'],
         where: { status: 'paid', paidAt: { gte: monthStart } },
         _sum: { amountInCents: true },
       }),
@@ -103,7 +125,17 @@ export class DashboardService {
           expiredSince: s.validUntil.toISOString(),
         })),
       },
-      monthlyRevenue: { total: monthlyRevenue._sum.amountInCents ?? 0 },
+      monthlyRevenue: {
+        total: monthlyRevenue._sum.amountInCents ?? 0,
+        subscriptions:
+          revenueByPurpose.find((r) => r.purpose === 'plan')?._sum.amountInCents ?? 0,
+        credits:
+          revenueByPurpose.find((r) => r.purpose === 'credits')?._sum.amountInCents ?? 0,
+      },
+      overduePayments: {
+        count: overduePayments._count,
+        totalAmountInCents: overduePayments._sum.amountInCents ?? 0,
+      },
     };
   }
 

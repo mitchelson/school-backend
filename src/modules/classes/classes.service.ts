@@ -10,7 +10,7 @@ export class ClassesService {
     private notifications: NotificationsService,
   ) {}
 
-  async list(page = 1, limit = 20, status?: string) {
+  async list(page = 1, limit = 20, status?: string, studentId?: string) {
     const take = Math.min(limit, 100);
     const skip = (page - 1) * take;
     const where = status ? { status: status as any } : undefined;
@@ -26,11 +26,34 @@ export class ClassesService {
       this.prisma.classInstance.count({ where }),
     ]);
 
-    const data = classes.map((c) => ({
-      ...c,
-      availableSlots: c.maxStudents - c._count.attendances,
-      _count: undefined,
-    }));
+    let enrollmentMap: Record<string, { status: string; enrollmentSource: string }> = {};
+    if (studentId) {
+      const enrollments = await this.prisma.classAttendance.findMany({
+        where: {
+          studentId,
+          classInstanceId: { in: classes.map((c) => c.id) },
+          status: { not: 'cancelled' },
+        },
+        select: { classInstanceId: true, status: true, enrollmentSource: true },
+      });
+      enrollmentMap = Object.fromEntries(
+        enrollments.map((e) => [
+          e.classInstanceId,
+          { status: e.status, enrollmentSource: e.enrollmentSource },
+        ]),
+      );
+    }
+
+    const data = classes.map((c) => {
+      const en = enrollmentMap[c.id];
+      return {
+        ...c,
+        availableSlots: c.maxStudents - c._count.attendances,
+        enrollmentStatus: en?.status ?? null,
+        enrollmentSource: en?.enrollmentSource ?? null,
+        _count: undefined,
+      };
+    });
 
     return { data, total, page, limit: take, hasMore: skip + take < total };
   }

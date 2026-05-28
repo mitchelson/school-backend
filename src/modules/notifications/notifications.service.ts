@@ -19,6 +19,20 @@ export class NotificationsService {
     });
   }
 
+  async listForStudent(studentId: string) {
+    return this.prisma.notification.findMany({
+      where: { studentId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+  }
+
+  async getUnreadCount(studentId: string) {
+    return this.prisma.notification.count({
+      where: { studentId, read: false },
+    });
+  }
+
   async getUnread(studentId: string) {
     return this.prisma.notification.findMany({
       where: { studentId, read: false },

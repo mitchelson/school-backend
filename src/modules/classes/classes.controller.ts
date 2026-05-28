@@ -4,6 +4,7 @@ import { CreateClassDto, UpdateClassDto } from './dto/classes.dto';
 import { FirebaseAuthGuard } from '../../common/guards/firebase-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('classes')
 @UseGuards(FirebaseAuthGuard, RolesGuard)
@@ -12,6 +13,8 @@ export class ClassesController {
 
   @Get()
   list(
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') role: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('status') status?: string,
@@ -20,6 +23,7 @@ export class ClassesController {
       Number(page) || 1,
       Number(limit) || 20,
       status,
+      role === 'aluno' ? userId : undefined,
     );
   }
 

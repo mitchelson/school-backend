@@ -1,4 +1,4 @@
-import { Controller, Post, Delete, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Query, UseGuards } from '@nestjs/common';
 import { EnrollmentsService } from './enrollments.service';
 import { FirebaseAuthGuard } from '../../common/guards/firebase-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -7,6 +7,14 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 @UseGuards(FirebaseAuthGuard)
 export class EnrollmentsController {
   constructor(private enrollmentsService: EnrollmentsService) {}
+
+  @Get('enrollments/me')
+  listMine(
+    @CurrentUser('id') userId: string,
+    @Query('scope') scope?: 'today' | 'upcoming' | 'all',
+  ) {
+    return this.enrollmentsService.listMyEnrollments(userId, scope ?? 'upcoming');
+  }
 
   @Post(':classId/enroll')
   enroll(

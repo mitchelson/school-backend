@@ -80,6 +80,51 @@ export class EnrollmentsService {
     return result;
   }
 
+  async listMyEnrollments(studentId: string, scope: 'today' | 'upcoming' | 'all' = 'upcoming') {
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(now);
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const dateFilter =
+      scope === 'today'
+        ? { gte: todayStart, lte: todayEnd }
+        : scope === 'upcoming'
+          ? { gte: todayStart }
+          : undefined;
+
+    const enrollments = await this.prisma.classAttendance.findMany({
+      where: {
+        studentId,
+        status: { in: ['enrolled', 'confirmed'] },
+        classInstance: {
+          status: 'open',
+          ...(dateFilter && { date: dateFilter }),
+        },
+      },
+      include: { classInstance: true },
+      orderBy: { classInstance: { date: 'asc' } },
+    });
+
+    return enrollments.map((e) => ({
+      id: e.id,
+      enrollmentStatus: e.status,
+      enrollmentSource: e.enrollmentSource,
+      checkedInAt: e.checkedInAt,
+      class: {
+        id: e.classInstance.id,
+        name: e.classInstance.name,
+        teacherName: e.classInstance.teacherName,
+        date: e.classInstance.date.toISOString(),
+        startTime: e.classInstance.startTime,
+        durationMinutes: e.classInstance.durationMinutes,
+        location: e.classInstance.location,
+        status: e.classInstance.status,
+      },
+    }));
+  }
+
   async cancelEnrollment(studentId: string, classInstanceId: string) {
     const enrollment = await this.prisma.classAttendance.findUnique({
       where: { studentId_classInstanceId: { studentId, classInstanceId } },

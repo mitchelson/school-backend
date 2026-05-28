@@ -74,14 +74,43 @@ export class PaymentsController {
     return { data, total, page: Number(page) || 1, limit: take, hasMore: skip + take < total };
   }
 
+  @Get('me/pending')
+  @UseGuards(FirebaseAuthGuard)
+  async myPending(@CurrentUser('id') userId: string) {
+    return this.prisma.payment.findMany({
+      where: { studentId: userId, status: 'pending' },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      include: { plan: { select: { name: true } } },
+    });
+  }
+
   @Get('status/:id')
   @UseGuards(FirebaseAuthGuard)
-  async getStatus(@Query('id') id: string) {
-    const payment = await this.prisma.payment.findUnique({
-      where: { id },
-      select: { id: true, status: true },
+  async getStatus(@CurrentUser('id') userId: string, @Param('id') id: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: { id, studentId: userId },
+      select: { id: true, status: true, purpose: true, amountInCents: true },
     });
-    return { paymentId: payment?.id, status: payment?.status, paid: payment?.status === 'paid' };
+    if (!payment) return { paymentId: id, status: null, paid: false };
+    return {
+      paymentId: payment.id,
+      status: payment.status,
+      paid: payment.status === 'paid',
+      purpose: payment.purpose,
+      amountInCents: payment.amountInCents,
+    };
+  }
+
+  @Post(':id/dev-confirm')
+  @UseGuards(FirebaseAuthGuard)
+  async devConfirm(@CurrentUser('id') userId: string, @Param('id') id: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: { id, studentId: userId, status: 'pending' },
+    });
+    if (!payment) return { ok: false };
+    await this.checkoutService.fulfillPayment(id);
+    return { ok: true, paid: true };
   }
 }
 
