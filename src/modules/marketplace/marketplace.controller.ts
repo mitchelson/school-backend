@@ -51,12 +51,24 @@ export class MarketplaceController {
     }
   }
 
+  @Get('oauth/setup')
+  @UseGuards(FirebaseAuthGuard, RolesGuard)
+  @Roles('admin')
+  oauthSetup() {
+    return this.oauth.getOAuthSetupHint();
+  }
+
   @Get('oauth/authorize')
   @UseGuards(FirebaseAuthGuard, RolesGuard)
   @Roles('admin')
   async authorize() {
     const url = await this.oauth.buildAuthorizeUrl();
-    return { url };
+    const setup = this.oauth.getOAuthSetupHint();
+    return {
+      url,
+      redirectUri: setup.redirectUri,
+      appIdSuffix: setup.appIdSuffix,
+    };
   }
 
   /** Callback público — Mercado Pago redireciona aqui após OAuth. */
@@ -64,14 +76,24 @@ export class MarketplaceController {
   async callback(
     @Query('code') code: string,
     @Query('state') state: string,
+    @Query('error') oauthError: string,
+    @Query('error_description') oauthErrorDescription: string,
     @Res() res: Response,
   ) {
     try {
+      if (oauthError) {
+        throw new Error(oauthErrorDescription || oauthError);
+      }
       if (!code || !state) throw new Error('Parâmetros ausentes');
       await this.oauth.handleCallback(code, state);
       res.redirect(this.oauth.getFrontendRedirectUrl(true));
-    } catch {
-      res.redirect(this.oauth.getFrontendRedirectUrl(false));
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Falha na autorização Mercado Pago';
+      const base = this.oauth.getFrontendRedirectUrl(false);
+      res.redirect(
+        `${base}&reason=${encodeURIComponent(message.slice(0, 200))}`,
+      );
     }
   }
 }

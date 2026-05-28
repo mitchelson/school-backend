@@ -46,3 +46,15 @@ bash /opt/school-backend/deploy/post-deploy.sh
 ## Better Stack (logs + uptime)
 
 Ver [docs/BETTER-STACK.md](../docs/BETTER-STACK.md) — produto **CT095 School API**, separado do Zenvix.
+
+## Mercado Pago OAuth (conectar escola)
+
+Se o MP mostrar *“não foi possível conectar o aplicativo”*:
+
+1. Em [developers.mercadopago.com](https://www.mercadopago.com.br/developers/panel/app) → sua aplicação → **URLs de redirecionamento**, cadastre **exatamente**:
+   `https://api.ct095.com/api/v1/marketplace/mp/oauth/callback` (sem `/` no final).
+2. Em `.env.production`:
+   - `MERCADOPAGO_APP_ID` = **número** da aplicação (Client ID), não `APP_USR-…`
+   - `MERCADOPAGO_CLIENT_SECRET` = Client Secret da aplicação, não Access Token
+   - `MERCADOPAGO_OAUTH_REDIRECT_URI` = mesma URL do passo 1
+3. Após deploy, admin autenticado: `GET /api/v1/marketplace/mp/oauth/setup` — lista checks da configuração.
