@@ -32,6 +32,43 @@ fi
 
 ln -sf .env.production .env
 
+db_url_from_env() {
+  if [ -n "${DATABASE_URL:-}" ]; then
+    printf '%s' "${DATABASE_URL}"
+    return 0
+  fi
+  grep '^DATABASE_URL=' .env.production 2>/dev/null | cut -d= -f2- | tr -d '"'
+}
+
+run_sql_file() {
+  local sql_file="$1"
+  local db_url
+  db_url="$(db_url_from_env)"
+  if [ -z "${db_url}" ]; then
+    echo "❌ DATABASE_URL ausente para ${sql_file}"
+    return 1
+  fi
+  if ! command -v psql >/dev/null 2>&1; then
+    echo "❌ psql necessário para ${sql_file}"
+    return 1
+  fi
+  psql "${db_url}" -v ON_ERROR_STOP=1 -f "${sql_file}"
+}
+
+repair_failed_migration() {
+  local migration="$1"
+  case "${migration}" in
+    20260528140500_class_series)
+      echo "==> Reparando schema class_series..."
+      run_sql_file deploy/ensure-class-series.sql
+      ;;
+    *)
+      echo "❌ Sem reparo automático para ${migration}"
+      return 1
+      ;;
+  esac
+}
+
 run_prisma_migrate() {
   PATH="$(dirname "${NODE_BIN}"):${PATH}"
   local log
@@ -48,6 +85,20 @@ run_prisma_migrate() {
     ./node_modules/.bin/prisma migrate deploy
     return $?
   fi
+  if grep -q 'P3009' "${log}"; then
+    local failed_migration
+    failed_migration="$(sed -n 's/.*The `\([^`]*\)` migration.*failed.*/\1/p' "${log}" | head -1)"
+    if [ -n "${failed_migration}" ]; then
+      echo "==> Migration ${failed_migration} falhou antes (P3009). Reparando..."
+      if repair_failed_migration "${failed_migration}"; then
+        echo "==> Marcando ${failed_migration} como aplicada..."
+        ./node_modules/.bin/prisma migrate resolve --applied "${failed_migration}"
+        rm -f "${log}"
+        ./node_modules/.bin/prisma migrate deploy
+        return $?
+      fi
+    fi
+  fi
   rm -f "${log}"
   return 1
 }
@@ -55,16 +106,9 @@ run_prisma_migrate() {
 echo "==> Prisma migrate deploy..."
 run_prisma_migrate
 
-if [ -n "${DATABASE_URL:-}" ] || grep -q '^DATABASE_URL=' .env.production 2>/dev/null; then
+if [ -n "$(db_url_from_env)" ]; then
   echo "==> Garantindo PlatformSetting e colunas MP no User..."
-  if command -v psql >/dev/null 2>&1; then
-    DB_URL="$(grep '^DATABASE_URL=' .env.production | cut -d= -f2- | tr -d '"')"
-    if [ -n "${DB_URL}" ]; then
-      psql "${DB_URL}" -v ON_ERROR_STOP=1 -f deploy/ensure-platform-settings.sql || true
-    fi
-  else
-    echo "   (psql não instalado — pule se migrations já aplicaram marketplace_mp)"
-  fi
+  run_sql_file deploy/ensure-platform-settings.sql || true
 fi
 
 echo "==> PM2 reload..."
