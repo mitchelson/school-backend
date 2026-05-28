@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { MercadoPagoGateway } from '../../infrastructure/gateways/mercadopago/mercadopago.gateway';
+import type { MpPayerInput } from '../../infrastructure/gateways/mercadopago/mercadopago-order.builder';
 import { MpSellerService } from '../marketplace/mp-seller.service';
 import { PlatformSettingsService } from '../marketplace/platform-settings.service';
 import { SplitCalculatorService } from '../marketplace/split-calculator.service';
@@ -48,6 +49,9 @@ export class PaymentCheckoutService {
     cardToken?: string,
     installments?: number,
     paymentMethodId?: string,
+    deviceSessionId?: string,
+    payerIdentificationType?: 'CPF' | 'CNPJ',
+    payerIdentificationNumber?: string,
   ) {
     const plan = await this.prisma.plan.findUnique({ where: { id: planId } });
     if (!plan || !plan.active) {
@@ -80,14 +84,20 @@ export class PaymentCheckoutService {
 
     const result = await this.gateway.createCheckout({
       paymentId: payment.id,
-      amountInCents: plan.priceInCents,
-      description: `Plano ${plan.name} - CT095`,
-      payerEmail: student.email,
-      payerName: student.fullName,
       paymentMethod,
       cardToken,
       installments,
       paymentMethodId,
+      deviceSessionId,
+      payer: this.buildPayer(student, payerIdentificationType, payerIdentificationNumber),
+      items: [
+        {
+          title: `Plano ${plan.name} - CT095`,
+          quantity: 1,
+          unitPriceInCents: plan.priceInCents,
+          externalCode: plan.id,
+        },
+      ],
       mercadopagoMarketplace: split.marketplace,
     });
 
@@ -118,6 +128,9 @@ export class PaymentCheckoutService {
     cardToken?: string,
     installments?: number,
     paymentMethodId?: string,
+    deviceSessionId?: string,
+    payerIdentificationType?: 'CPF' | 'CNPJ',
+    payerIdentificationNumber?: string,
   ) {
     const student = await this.prisma.user.findUnique({ where: { id: studentId } });
     if (!student) throw new BadRequestException('Aluno não encontrado');
@@ -147,14 +160,20 @@ export class PaymentCheckoutService {
 
     const result = await this.gateway.createCheckout({
       paymentId: payment.id,
-      amountInCents,
-      description: `${quantity} crédito${quantity > 1 ? 's' : ''} - CT095`,
-      payerEmail: student.email,
-      payerName: student.fullName,
       paymentMethod,
       cardToken,
       installments,
       paymentMethodId,
+      deviceSessionId,
+      payer: this.buildPayer(student, payerIdentificationType, payerIdentificationNumber),
+      items: [
+        {
+          title: 'Crédito avulso CT095',
+          quantity,
+          unitPriceInCents: unitPrice,
+          externalCode: `credits-x${quantity}`,
+        },
+      ],
       mercadopagoMarketplace: split.marketplace,
     });
 
@@ -293,6 +312,23 @@ export class PaymentCheckoutService {
         sellerAccessToken: sellerToken,
       },
     };
+  }
+
+  private buildPayer(
+    student: { email: string; fullName: string; phone: string | null; createdAt: Date },
+    identificationType?: 'CPF' | 'CNPJ',
+    identificationNumber?: string,
+  ): MpPayerInput {
+    const payer: MpPayerInput = {
+      email: student.email,
+      fullName: student.fullName,
+      phone: student.phone,
+      createdAt: student.createdAt,
+    };
+    if (identificationType && identificationNumber) {
+      payer.identification = { type: identificationType, number: identificationNumber };
+    }
+    return payer;
   }
 
   private isDevSimulate(): boolean {

@@ -28,6 +28,9 @@ export class PaymentsController {
       dto.cardToken,
       dto.installments,
       dto.paymentMethodId,
+      dto.deviceSessionId,
+      dto.payerIdentificationType,
+      dto.payerIdentificationNumber,
     );
   }
 
@@ -41,6 +44,9 @@ export class PaymentsController {
       dto.cardToken,
       dto.installments,
       dto.paymentMethodId,
+      dto.deviceSessionId,
+      dto.payerIdentificationType,
+      dto.payerIdentificationNumber,
     );
   }
 

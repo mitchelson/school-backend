@@ -32,6 +32,38 @@ export function formatDateOnly(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/** Horário da escola (America/Sao_Paulo, UTC−3 fixo). */
+const SCHOOL_UTC_OFFSET_HOURS = 3;
+
+export const CHECKIN_WINDOW_BEFORE_MS = 2 * 60 * 60 * 1000;
+export const CHECKIN_WINDOW_AFTER_MS = 15 * 60 * 1000;
+
+/**
+ * Combina o dia civil da aula (armazenado em UTC meio-dia) com startTime (HH:mm em BRT).
+ * Não use setHours no fuso do servidor — isso quebrava check-in em VPS em UTC.
+ */
+export function buildClassStartInstant(classDate: Date, startTime: string): Date {
+  const [hours, minutes] = startTime.trim().split(':').map(Number);
+  const ymd = formatDateOnly(classDate);
+  const [y, m, d] = ymd.split('-').map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+    throw new Error(`Horário de aula inválido: ${startTime}`);
+  }
+  return new Date(Date.UTC(y, m - 1, d, hours + SCHOOL_UTC_OFFSET_HOURS, minutes, 0, 0));
+}
+
+export function getCheckinWindow(classDate: Date, startTime: string, now = new Date()) {
+  const classStart = buildClassStartInstant(classDate, startTime);
+  const windowStart = new Date(classStart.getTime() - CHECKIN_WINDOW_BEFORE_MS);
+  const windowEnd = new Date(classStart.getTime() + CHECKIN_WINDOW_AFTER_MS);
+  return {
+    classStart,
+    windowStart,
+    windowEnd,
+    isOpen: now >= windowStart && now <= windowEnd,
+  };
+}
+
 /** weekday ISO 1=Seg … 7=Dom (UTC). */
 export function isoWeekdayFromDate(d: Date): number {
   const js = d.getUTCDay();

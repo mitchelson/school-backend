@@ -5,6 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { buildClassStartInstant } from '../classes/class-series.utils';
 import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
@@ -136,7 +137,10 @@ export class EnrollmentsService {
     }
 
     // Check if class hasn't started
-    const classStart = this.getClassDateTime(enrollment.classInstance.date, enrollment.classInstance.startTime);
+    const classStart = buildClassStartInstant(
+      enrollment.classInstance.date,
+      enrollment.classInstance.startTime,
+    );
     if (new Date() >= classStart) {
       throw new ForbiddenException('Não é possível cancelar após o início da aula');
     }
@@ -204,12 +208,5 @@ export class EnrollmentsService {
     end.setHours(23, 59, 59, 999);
 
     return { start, end };
-  }
-
-  private getClassDateTime(date: Date, startTime: string): Date {
-    const [hours, minutes] = startTime.split(':').map(Number);
-    const dt = new Date(date);
-    dt.setHours(hours, minutes, 0, 0);
-    return dt;
   }
 }

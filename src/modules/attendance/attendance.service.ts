@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { getCheckinWindow } from '../classes/class-series.utils';
 
 @Injectable()
 export class AttendanceService {
@@ -19,22 +20,24 @@ export class AttendanceService {
       throw new ConflictException('Check-in já realizado');
     }
 
-    // Validate check-in window: classStart - 30min to classStart + 15min
-    const classStart = this.getClassDateTime(
+    const now = new Date();
+    const { windowStart, windowEnd, isOpen } = getCheckinWindow(
       enrollment.classInstance.date,
       enrollment.classInstance.startTime,
+      now,
     );
-    const now = new Date();
-    const windowStart = new Date(classStart.getTime() - 30 * 60 * 1000);
-    const windowEnd = new Date(classStart.getTime() + 15 * 60 * 1000);
 
-    if (now < windowStart) {
+    if (!isOpen && now < windowStart) {
       throw new BadRequestException(
-        `Check-in disponível a partir de ${windowStart.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
+        `Check-in disponível a partir de ${windowStart.toLocaleTimeString('pt-BR', {
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'America/Sao_Paulo',
+        })}`,
       );
     }
 
-    if (now > windowEnd) {
+    if (!isOpen && now > windowEnd) {
       throw new BadRequestException('Janela de check-in encerrada');
     }
 
@@ -50,12 +53,5 @@ export class AttendanceService {
       include: { student: { select: { id: true, fullName: true, email: true } } },
       orderBy: { createdAt: 'asc' },
     });
-  }
-
-  private getClassDateTime(date: Date, startTime: string): Date {
-    const [hours, minutes] = startTime.split(':').map(Number);
-    const dt = new Date(date);
-    dt.setHours(hours, minutes, 0, 0);
-    return dt;
   }
 }

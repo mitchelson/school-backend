@@ -1,5 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  buildMpOrderBody,
+  type MpOrderItemInput,
+  type MpPayerInput,
+} from './mercadopago-order.builder';
 
 export interface MercadoPagoMarketplaceSplit {
   applicationFeeInCents: number;
@@ -8,14 +13,13 @@ export interface MercadoPagoMarketplaceSplit {
 
 export interface CheckoutInput {
   paymentId: string;
-  amountInCents: number;
-  description: string;
-  payerEmail: string;
-  payerName?: string;
+  items: MpOrderItemInput[];
+  payer: MpPayerInput;
   paymentMethod: 'pix' | 'card';
   cardToken?: string;
   installments?: number;
   paymentMethodId?: string;
+  deviceSessionId?: string;
   mercadopagoMarketplace?: MercadoPagoMarketplaceSplit;
 }
 
@@ -61,32 +65,13 @@ export class MercadoPagoGateway {
    * Returns QR code for the student to scan.
    */
   private async createPixOrder(input: CheckoutInput): Promise<CheckoutResult> {
-    const amountStr = (input.amountInCents / 100).toFixed(2);
-    const marketplaceFee = this.resolveMarketplaceFee(input);
-
-    const body: Record<string, unknown> = {
-      type: 'online',
-      processing_mode: 'automatic',
-      external_reference: input.paymentId,
-      total_amount: amountStr,
-      description: input.description.slice(0, 255),
-      payer: { email: input.payerEmail },
-      transactions: {
-        payments: [
-          {
-            amount: amountStr,
-            payment_method: { id: 'pix', type: 'bank_transfer' },
-            expiration_time: 'PT1H',
-          },
-        ],
-      },
-      ...(marketplaceFee != null ? { marketplace_fee: marketplaceFee } : {}),
-    };
+    const body = this.buildOrderBody(input);
 
     const order = await this.postOrder(
       body,
       input.paymentId,
       input.mercadopagoMarketplace?.sellerAccessToken,
+      input.deviceSessionId,
     );
     const payment = order.transactions?.payments?.[0];
 
@@ -109,36 +94,13 @@ export class MercadoPagoGateway {
   private async createCardPayment(input: CheckoutInput): Promise<CheckoutResult> {
     if (!input.cardToken) throw new Error('Token do cartão é obrigatório');
 
-    const amountStr = (input.amountInCents / 100).toFixed(2);
-    const marketplaceFee = this.resolveMarketplaceFee(input);
-
-    const body: Record<string, unknown> = {
-      type: 'online',
-      processing_mode: 'automatic',
-      external_reference: input.paymentId,
-      total_amount: amountStr,
-      description: input.description.slice(0, 255),
-      payer: { email: input.payerEmail },
-      transactions: {
-        payments: [
-          {
-            amount: amountStr,
-            payment_method: {
-              id: input.paymentMethodId || 'master',
-              type: 'credit_card',
-              token: input.cardToken,
-              installments: input.installments ?? 1,
-            },
-          },
-        ],
-      },
-      ...(marketplaceFee != null ? { marketplace_fee: marketplaceFee } : {}),
-    };
+    const body = this.buildOrderBody(input);
 
     const order = await this.postOrder(
       body,
       input.paymentId,
       input.mercadopagoMarketplace?.sellerAccessToken,
+      input.deviceSessionId,
     );
     const payment = order.transactions?.payments?.[0];
 
@@ -362,6 +324,42 @@ export class MercadoPagoGateway {
     return 'pending';
   }
 
+  private buildOrderBody(input: CheckoutInput): Record<string, unknown> {
+    return buildMpOrderBody({
+      paymentId: input.paymentId,
+      items: input.items,
+      payer: input.payer,
+      paymentMethod: input.paymentMethod,
+      statementDescriptor: this.getStatementDescriptor(),
+      categoryId: this.config.get<string>('MP_ORDER_CATEGORY_ID')?.trim() || 'services',
+      shipment: this.getDefaultShipment(),
+      cardToken: input.cardToken,
+      paymentMethodId: input.paymentMethodId,
+      installments: input.installments,
+      marketplaceFee: this.resolveMarketplaceFee(input),
+    });
+  }
+
+  private getStatementDescriptor(): string {
+    return (
+      this.config.get<string>('MERCADOPAGO_STATEMENT_DESCRIPTOR')?.trim() || 'CT095'
+    ).slice(0, 50);
+  }
+
+  private getDefaultShipment() {
+    return {
+      zipCode:
+        this.config.get<string>('MP_SCHOOL_ZIP_CODE')?.trim() || '06233903',
+      cityName: this.config.get<string>('MP_SCHOOL_CITY')?.trim() || 'Osasco',
+      stateName:
+        this.config.get<string>('MP_SCHOOL_STATE')?.trim() || 'São Paulo',
+      streetName:
+        this.config.get<string>('MP_SCHOOL_STREET')?.trim() ||
+        'Av. das Nações Unidas',
+      streetNumber: this.config.get<string>('MP_SCHOOL_STREET_NUMBER')?.trim() || '3003',
+    };
+  }
+
   private resolveMarketplaceFee(input: CheckoutInput): string | null {
     const split = input.mercadopagoMarketplace;
     if (!split || split.applicationFeeInCents <= 0) return null;
@@ -375,15 +373,22 @@ export class MercadoPagoGateway {
     body: Record<string, unknown>,
     idempotencyKey: string,
     sellerAccessToken?: string,
+    deviceSessionId?: string,
   ): Promise<Record<string, any>> {
     const bearer = sellerAccessToken?.trim() || this.getAccessToken();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${bearer}`,
+      'X-Idempotency-Key': idempotencyKey,
+    };
+    const sessionId = deviceSessionId?.trim();
+    if (sessionId) {
+      headers['X-meli-session-id'] = sessionId;
+    }
+
     const response = await fetch(`${this.apiBase}/v1/orders`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${bearer}`,
-        'X-Idempotency-Key': idempotencyKey,
-      },
+      headers,
       body: JSON.stringify(body),
     });
 

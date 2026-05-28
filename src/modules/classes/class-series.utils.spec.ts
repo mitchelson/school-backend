@@ -1,6 +1,8 @@
 import {
+  buildClassStartInstant,
   computeOccurrenceDates,
   formatDateOnly,
+  getCheckinWindow,
   inferWeekdaysConvention,
   isoWeekdayFromDate,
   normalizeWeekdaysToIso,
@@ -33,5 +35,24 @@ describe('class-series.utils', () => {
     const d = parseIsoDateOnly('2026-06-03');
     expect(formatDateOnly(d)).toBe('2026-06-03');
     expect(isoWeekdayFromDate(d)).toBe(3);
+  });
+
+  it('builds class start at 18:00 BRT as 21:00 UTC', () => {
+    const classDate = parseIsoDateOnly('2026-05-28');
+    expect(buildClassStartInstant(classDate, '18:00').toISOString()).toBe(
+      '2026-05-28T21:00:00.000Z',
+    );
+  });
+
+  it('rejects check-in 4h before an 18:00 class', () => {
+    const classDate = parseIsoDateOnly('2026-05-28');
+    const at14Brt = new Date('2026-05-28T17:00:00.000Z');
+    expect(getCheckinWindow(classDate, '18:00', at14Brt).isOpen).toBe(false);
+  });
+
+  it('allows check-in 2h before an 18:00 class', () => {
+    const classDate = parseIsoDateOnly('2026-05-28');
+    const at16Brt = new Date('2026-05-28T19:00:00.000Z');
+    expect(getCheckinWindow(classDate, '18:00', at16Brt).isOpen).toBe(true);
   });
 });
