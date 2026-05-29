@@ -89,12 +89,7 @@ export class PaymentCheckoutService {
       installments,
       paymentMethodId,
       deviceSessionId,
-      payer: await this.buildPayerForCheckout(
-        student,
-        studentId,
-        payerIdentificationType,
-        payerIdentificationNumber,
-      ),
+      payer: this.buildPayer(student, payerIdentificationType, payerIdentificationNumber),
       items: [
         {
           title: `Plano ${plan.name} - CT095`,
@@ -170,12 +165,7 @@ export class PaymentCheckoutService {
       installments,
       paymentMethodId,
       deviceSessionId,
-      payer: await this.buildPayerForCheckout(
-        student,
-        studentId,
-        payerIdentificationType,
-        payerIdentificationNumber,
-      ),
+      payer: this.buildPayer(student, payerIdentificationType, payerIdentificationNumber),
       items: [
         {
           title: 'Crédito avulso CT095',
@@ -339,30 +329,6 @@ export class PaymentCheckoutService {
         applicationFeeInCents: breakdown.applicationFeeInCents,
         sellerAccessToken: sellerToken,
       },
-    };
-  }
-
-  private async buildPayerForCheckout(
-    student: { email: string; fullName: string; phone: string | null; createdAt: Date },
-    studentId: string,
-    identificationType?: 'CPF' | 'CNPJ',
-    identificationNumber?: string,
-  ): Promise<MpPayerInput> {
-    const [approvedCount, lastPaid] = await Promise.all([
-      this.prisma.payment.count({
-        where: { studentId, status: 'paid' },
-      }),
-      this.prisma.payment.findFirst({
-        where: { studentId, status: 'paid', paidAt: { not: null } },
-        orderBy: { paidAt: 'desc' },
-        select: { paidAt: true },
-      }),
-    ]);
-
-    return {
-      ...this.buildPayer(student, identificationType, identificationNumber),
-      isFirstPurchaseOnline: approvedCount === 0,
-      lastPurchaseAt: lastPaid?.paidAt ?? undefined,
     };
   }
 

@@ -12,10 +12,6 @@ export interface MpPayerInput {
   phone?: string | null;
   createdAt: Date;
   identification?: { type: string; number: string };
-  /** MP additional_info.payer.is_first_purchase_online */
-  isFirstPurchaseOnline?: boolean;
-  /** MP additional_info.payer.last_purchase */
-  lastPurchaseAt?: Date;
 }
 
 export interface MpShipmentInput {
@@ -94,47 +90,16 @@ export function buildMpOrderBody(input: BuildMpOrderBodyInput): Record<string, u
     payer.phone = { area_code: phone.areaCode, number: phone.number };
   }
 
-  const descriptor = input.statementDescriptor.slice(0, 50);
   const paymentMethod: Record<string, unknown> =
     input.paymentMethod === 'pix'
-      ? {
-          id: 'pix',
-          type: 'bank_transfer',
-          statement_descriptor: descriptor,
-        }
+      ? { id: 'pix', type: 'bank_transfer' }
       : {
           id: input.paymentMethodId || 'master',
           type: 'credit_card',
           token: input.cardToken,
           installments: input.installments ?? 1,
-          statement_descriptor: descriptor,
+          statement_descriptor: input.statementDescriptor.slice(0, 50),
         };
-
-  const zipCode = input.shipment.zipCode.replace(/\D/g, '').slice(0, 16);
-  const cityName = input.shipment.cityName.slice(0, 50);
-  const stateName = input.shipment.stateName.slice(0, 50);
-  const streetNumber = input.shipment.streetNumber?.slice(0, 20);
-
-  const receiverAddress: Record<string, unknown> = {
-    zip_code: zipCode,
-    city_name: cityName,
-    state_name: stateName,
-    ...(input.shipment.streetName
-      ? { street_name: input.shipment.streetName.slice(0, 100) }
-      : {}),
-    ...(streetNumber ? { street_number: streetNumber } : {}),
-  };
-
-  const additionalPayer: Record<string, unknown> = {
-    registration_date: input.payer.createdAt.toISOString(),
-    authentication_type: 'custom',
-  };
-  if (input.payer.isFirstPurchaseOnline != null) {
-    additionalPayer.is_first_purchase_online = input.payer.isFirstPurchaseOnline;
-  }
-  if (input.payer.lastPurchaseAt) {
-    additionalPayer.last_purchase = input.payer.lastPurchaseAt.toISOString();
-  }
 
   const body: Record<string, unknown> = {
     type: 'online',
@@ -146,24 +111,15 @@ export function buildMpOrderBody(input: BuildMpOrderBodyInput): Record<string, u
     items,
     shipment: {
       address: {
-        zip_code: zipCode,
-        city: cityName,
-        state: stateName,
+        zip_code: input.shipment.zipCode.replace(/\D/g, '').slice(0, 16),
+        city: input.shipment.cityName.slice(0, 50),
+        state: input.shipment.stateName.slice(0, 50),
         ...(input.shipment.streetName
           ? { street_name: input.shipment.streetName.slice(0, 100) }
           : {}),
-        ...(streetNumber ? { street_number: streetNumber } : {}),
-      },
-    },
-    additional_info: {
-      payer: additionalPayer,
-      shipments: {
-        receiver_address: receiverAddress,
-      },
-    },
-    config: {
-      online: {
-        capture_mode: 'automatic',
+        ...(input.shipment.streetNumber
+          ? { street_number: input.shipment.streetNumber.slice(0, 20) }
+          : {}),
       },
     },
     transactions: {

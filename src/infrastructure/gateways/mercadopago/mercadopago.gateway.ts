@@ -420,7 +420,7 @@ export class MercadoPagoGateway {
 
     if (!response.ok) {
       const errText = await response.text().catch(() => '');
-      this.logger.error(`MP Orders API error ${response.status}: ${errText.slice(0, 200)}`);
+      this.logger.error(`MP Orders API error ${response.status}: ${errText.slice(0, 800)}`);
       throw new Error(`Mercado Pago retornou ${response.status}`);
     }
 

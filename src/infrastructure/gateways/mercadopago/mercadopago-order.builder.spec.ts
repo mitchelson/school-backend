@@ -72,52 +72,18 @@ describe('mercadopago-order.builder', () => {
         state: 'São Paulo',
       }),
     });
-    expect(body.additional_info).toMatchObject({
-      payer: expect.objectContaining({
-        registration_date: '2025-01-15T12:00:00.000Z',
-        authentication_type: 'custom',
-      }),
-      shipments: {
-        receiver_address: expect.objectContaining({
-          zip_code: '06233903',
-          city_name: 'Osasco',
-          state_name: 'São Paulo',
-          street_number: '3003',
-        }),
-      },
-    });
+    expect(body).not.toHaveProperty('additional_info');
+    expect(body).not.toHaveProperty('config');
   });
 
-  it('includes payer purchase metadata and marketplace_fee', () => {
+  it('includes marketplace_fee when provided', () => {
     const body = buildMpOrderBody({
       ...base,
-      payer: {
-        ...base.payer,
-        isFirstPurchaseOnline: true,
-        lastPurchaseAt: new Date('2024-06-01T10:00:00.000Z'),
-      },
       marketplaceFee: '6.01',
       items: [{ title: 'Plano', quantity: 1, unitPriceInCents: 100 }],
     });
 
     expect(body.marketplace_fee).toBe('6.01');
-    expect(body.additional_info).toMatchObject({
-      payer: expect.objectContaining({
-        is_first_purchase_online: true,
-        last_purchase: '2024-06-01T10:00:00.000Z',
-      }),
-    });
-  });
-
-  it('includes statement_descriptor on pix', () => {
-    const body = buildMpOrderBody({
-      ...base,
-      items: [{ title: 'Plano', quantity: 1, unitPriceInCents: 100 }],
-    });
-
-    const payment = (body.transactions as { payments: Array<{ payment_method: Record<string, unknown> }> })
-      .payments[0];
-    expect(payment.payment_method.statement_descriptor).toBe('CT095');
   });
 
   it('sums credit line items', () => {
