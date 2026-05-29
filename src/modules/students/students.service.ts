@@ -7,6 +7,7 @@ const SELECT_FIELDS = {
   fullName: true,
   email: true,
   phone: true,
+  cpf: true,
   role: true,
   status: true,
   createdAt: true,
@@ -97,9 +98,15 @@ export class StudentsService {
   }
 
   async updateMe(userId: string, dto: UpdateStudentDto) {
+    const data: { fullName?: string; phone?: string; cpf?: string | null } = {};
+    if (dto.fullName !== undefined) data.fullName = dto.fullName;
+    if (dto.phone !== undefined) data.phone = dto.phone;
+    if (dto.cpf !== undefined) {
+      data.cpf = dto.cpf.replace(/\D/g, '') || null;
+    }
     return this.prisma.user.update({
       where: { id: userId },
-      data: dto,
+      data,
       select: SELECT_FIELDS,
     });
   }

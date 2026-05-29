@@ -55,6 +55,23 @@ export function splitBrazilPhone(phone?: string | null): { areaCode?: string; nu
   return { areaCode, number };
 }
 
+/** Formato esperado pelo MP: 2020-08-06T09:25:04.000-03:00 */
+export function formatMpRegistrationDate(date: Date): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? '00';
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}.000-03:00`;
+}
+
 export function buildMpOrderBody(input: BuildMpOrderBodyInput): Record<string, unknown> {
   const totalCents = input.items.reduce(
     (sum, item) => sum + item.unitPriceInCents * item.quantity,
@@ -89,6 +106,17 @@ export function buildMpOrderBody(input: BuildMpOrderBodyInput): Record<string, u
   if (phone.areaCode && phone.number) {
     payer.phone = { area_code: phone.areaCode, number: phone.number };
   }
+
+  payer.registration_date = formatMpRegistrationDate(input.payer.createdAt);
+
+  const zipCode = input.shipment.zipCode.replace(/\D/g, '').slice(0, 16);
+  payer.address = {
+    zip_code: zipCode,
+    city: input.shipment.cityName.slice(0, 50),
+    state: input.shipment.stateName.slice(0, 50),
+    street_name: (input.shipment.streetName ?? 'Servico digital').slice(0, 100),
+    street_number: (input.shipment.streetNumber ?? 'S/N').slice(0, 20),
+  };
 
   const statementDescriptor = input.statementDescriptor.slice(0, 50);
 

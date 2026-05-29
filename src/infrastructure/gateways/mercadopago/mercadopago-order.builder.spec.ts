@@ -64,6 +64,12 @@ describe('mercadopago-order.builder', () => {
       first_name: 'Maria',
       last_name: 'Silva Santos',
       identification: { type: 'CPF', number: '12345678909' },
+      registration_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000-03:00$/),
+      address: expect.objectContaining({
+        zip_code: '06233903',
+        city: 'Osasco',
+        state: 'São Paulo',
+      }),
     });
     expect(body.shipment).toMatchObject({
       address: expect.objectContaining({

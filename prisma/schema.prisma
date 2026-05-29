@@ -77,6 +77,7 @@ model User {
   fullName     String
   email        String     @unique
   phone        String?
+  cpf          String?
   role         Role       @default(aluno)
   status       UserStatus @default(active)
   mpUserId           String?

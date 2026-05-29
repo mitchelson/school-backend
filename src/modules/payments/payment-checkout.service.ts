@@ -333,20 +333,51 @@ export class PaymentCheckoutService {
   }
 
   private buildPayer(
-    student: { email: string; fullName: string; phone: string | null; createdAt: Date },
+    student: {
+      email: string;
+      fullName: string;
+      phone: string | null;
+      cpf?: string | null;
+      createdAt: Date;
+    },
     identificationType?: 'CPF' | 'CNPJ',
     identificationNumber?: string,
   ): MpPayerInput {
+    const identification = this.resolvePayerIdentification(
+      student,
+      identificationType,
+      identificationNumber,
+    );
+    if (!identification && !this.isDevSimulate()) {
+      throw new BadRequestException(
+        'Informe seu CPF para concluir o pagamento (perfil ou no checkout).',
+      );
+    }
+
     const payer: MpPayerInput = {
       email: student.email,
       fullName: student.fullName,
       phone: student.phone,
       createdAt: student.createdAt,
     };
-    if (identificationType && identificationNumber) {
-      payer.identification = { type: identificationType, number: identificationNumber };
+    if (identification) {
+      payer.identification = identification;
     }
     return payer;
+  }
+
+  private resolvePayerIdentification(
+    student: { cpf?: string | null },
+    identificationType?: 'CPF' | 'CNPJ',
+    identificationNumber?: string,
+  ): { type: string; number: string } | undefined {
+    const digits =
+      identificationNumber?.replace(/\D/g, '') || student.cpf?.replace(/\D/g, '') || '';
+    if (!digits) return undefined;
+    return {
+      type: identificationType ?? 'CPF',
+      number: digits,
+    };
   }
 
   private isDevSimulate(): boolean {

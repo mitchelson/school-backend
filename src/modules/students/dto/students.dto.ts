@@ -20,6 +20,13 @@ export class UpdateStudentDto {
 
   @IsOptional() @IsString() @Matches(/^\d{10,11}$/)
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^(\d{11}|\d{3}\.\d{3}\.\d{3}-\d{2})$/, {
+    message: 'CPF inválido',
+  })
+  cpf?: string;
 }
 
 export class StudentQueryDto {
