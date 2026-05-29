@@ -125,6 +125,7 @@ model Subscription {
   status                SubscriptionStatus @default(active)
   validUntil            DateTime
   gatewaySubscriptionId String?            // reserved for future recurring billing
+  lastExpiryNoticeValidUntil DateTime?
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
 

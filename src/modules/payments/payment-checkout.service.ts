@@ -6,6 +6,8 @@ import type { MpPayerInput } from '../../infrastructure/gateways/mercadopago/mer
 import { MpSellerService } from '../marketplace/mp-seller.service';
 import { PlatformSettingsService } from '../marketplace/platform-settings.service';
 import { SplitCalculatorService } from '../marketplace/split-calculator.service';
+import { SubscriptionMaintenanceService } from '../subscriptions/subscription-maintenance.service';
+import { computeRenewedValidUntil } from '../subscriptions/subscription.utils';
 
 @Injectable()
 export class PaymentCheckoutService {
@@ -18,6 +20,7 @@ export class PaymentCheckoutService {
     private mpSeller: MpSellerService,
     private platformSettings: PlatformSettingsService,
     private splitCalculator: SplitCalculatorService,
+    private subscriptionMaintenance: SubscriptionMaintenanceService,
   ) {}
 
   /** Prévia do split para o aluno antes de pagar (não cria pagamento). */
@@ -57,6 +60,8 @@ export class PaymentCheckoutService {
     if (!plan || !plan.active) {
       throw new BadRequestException('Plano não encontrado ou inativo');
     }
+
+    await this.subscriptionMaintenance.assertCanPurchasePlan(studentId);
 
     const student = await this.prisma.user.findUnique({ where: { id: studentId } });
     if (!student) throw new BadRequestException('Aluno não encontrado');
@@ -240,12 +245,19 @@ export class PaymentCheckoutService {
       });
 
       if (payment.purpose === 'plan' && payment.planId) {
-        // Activate/reactivate subscription with validUntil = now + 30 days
-        const validUntil = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+        const existing = await tx.subscription.findUnique({
+          where: { studentId: payment.studentId },
+        });
+        const validUntil = computeRenewedValidUntil(existing?.validUntil, now);
 
         await tx.subscription.upsert({
           where: { studentId: payment.studentId },
-          update: { planId: payment.planId, status: 'active', validUntil },
+          update: {
+            planId: payment.planId,
+            status: 'active',
+            validUntil,
+            lastExpiryNoticeValidUntil: null,
+          },
           create: {
             studentId: payment.studentId,
             planId: payment.planId,

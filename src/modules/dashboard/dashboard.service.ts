@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import {
+  canPurchaseOrRenewPlan,
+  daysUntilValidUntil,
+  PLAN_RENEW_WINDOW_DAYS,
+} from '../subscriptions/subscription.utils';
 
 @Injectable()
 export class DashboardService {
@@ -19,16 +24,15 @@ export class DashboardService {
     const now = new Date();
     let subscriptionData = null;
     if (subscription) {
-      const daysRemaining = Math.max(0, Math.ceil(
-        (subscription.validUntil.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
-      ));
+      const daysRemaining = daysUntilValidUntil(subscription.validUntil, now);
+      const status = now <= subscription.validUntil ? ('active' as const) : ('expired' as const);
       subscriptionData = {
         planId: subscription.planId,
         planName: subscription.plan.name,
         weeklyLimit: subscription.plan.weeklyLimit,
         validUntil: subscription.validUntil.toISOString(),
         daysRemaining,
-        status: now <= subscription.validUntil ? 'active' as const : 'expired' as const,
+        status,
       };
     }
 
@@ -50,7 +54,12 @@ export class DashboardService {
         pendingCount: pendingPayments,
         subscriptionExpired: subscriptionData?.status === 'expired',
         subscriptionExpiringSoon:
-          subscriptionData?.status === 'active' && (subscriptionData?.daysRemaining ?? 99) <= 5,
+          subscriptionData?.status === 'active' &&
+          (subscriptionData?.daysRemaining ?? 99) <= PLAN_RENEW_WINDOW_DAYS &&
+          (subscriptionData?.daysRemaining ?? 0) > 0,
+        canPurchasePlan: subscription
+          ? canPurchaseOrRenewPlan(subscription.validUntil, now)
+          : true,
       },
     };
   }

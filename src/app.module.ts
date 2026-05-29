@@ -18,6 +18,7 @@ import { HealthModule } from './modules/health/health.module';
 import { MarketplaceModule } from './modules/marketplace/marketplace.module';
 import { PlatformModule } from './modules/platform/platform.module';
 import { OwnerModule } from './modules/owner/owner.module';
+import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { OwnerModule } from './modules/owner/owner.module';
     PaymentsModule,
     DashboardModule,
     HealthModule,
+    SubscriptionsModule,
   ],
 })
 export class AppModule {}
