@@ -98,8 +98,8 @@ export function normalizeWeekdaysToIso(
 export function inferWeekdaysConvention(weekdays: number[]): WeekdaysConvention {
   const ints = weekdays.map((n) => Math.trunc(n));
   if (ints.some((n) => n === 0)) return 'monday_zero';
-  if (ints.some((n) => n === 7)) return 'iso';
-  // Painel CT095 envia 0=Seg; omitir convention → monday_zero. API ISO: envie weekdaysConvention=iso
+  // Painel web envia ISO 1=Seg … 7=Dom (ex.: Terça=2, Quinta=4)
+  if (ints.every((n) => n >= 1 && n <= 7)) return 'iso';
   return 'monday_zero';
 }
 

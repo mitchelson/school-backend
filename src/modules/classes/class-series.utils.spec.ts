@@ -22,6 +22,13 @@ describe('class-series.utils', () => {
     expect(inferWeekdaysConvention([0, 2])).toBe('monday_zero');
   });
 
+  it('infers iso for panel weekdays 1-7 (Terça=2, Quinta=4)', () => {
+    expect(inferWeekdaysConvention([2, 4])).toBe('iso');
+    expect(normalizeWeekdaysToIso([2, 4], inferWeekdaysConvention([2, 4]))).toEqual([
+      2, 4,
+    ]);
+  });
+
   it('generates Tuesday and Thursday for monday_zero input', () => {
     const iso = normalizeWeekdaysToIso([1, 3], 'monday_zero');
     const dates = computeOccurrenceDates('weekly', iso, 2);

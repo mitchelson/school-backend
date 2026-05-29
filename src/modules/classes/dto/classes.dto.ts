@@ -54,7 +54,7 @@ export class CreateClassDto {
    * Como o frontend envia weekdays:
    * - iso: 1=Seg … 7=Dom
    * - monday_zero: 0=Seg … 6=Dom (muitas UIs)
-   * Omitido: inferido (0 → monday_zero; 7 → iso; senão monday_zero)
+   * Omitido: inferido (0 → monday_zero; valores 1–7 → iso)
    */
   @IsOptional()
   @IsIn(['iso', 'monday_zero'])
