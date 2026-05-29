@@ -365,6 +365,7 @@ export class PaymentCheckoutService {
       fullName: string;
       phone: string | null;
       cpf?: string | null;
+      createdAt: Date;
     },
     identificationType?: 'CPF' | 'CNPJ',
     identificationNumber?: string,
@@ -384,6 +385,7 @@ export class PaymentCheckoutService {
       email: student.email,
       fullName: student.fullName,
       phone: student.phone,
+      createdAt: student.createdAt,
     };
     if (identification) {
       payer.identification = identification;

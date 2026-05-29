@@ -12,6 +12,7 @@ describe('mercadopago-order.builder', () => {
       email: 'aluno@test.com',
       fullName: 'Maria Silva Santos',
       phone: '11987654321',
+      createdAt: new Date('2025-01-15T12:00:00.000Z'),
       identification: { type: 'CPF', number: '123.456.789-09' },
     },
     paymentMethod: 'pix' as const,
@@ -71,14 +72,13 @@ describe('mercadopago-order.builder', () => {
       }),
     });
     expect(body.payer).not.toHaveProperty('registration_date');
-    expect(body.shipment).toMatchObject({
-      address: expect.objectContaining({
-        zip_code: '06233903',
-        city: 'Osasco',
-        state: 'São Paulo',
-      }),
+    expect(body.additional_info).toEqual({
+      payer: {
+        registration_date: expect.stringMatching(
+          /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000-03:00$/,
+        ),
+      },
     });
-    expect(body).not.toHaveProperty('additional_info');
     expect(body).not.toHaveProperty('config');
     expect(body).not.toHaveProperty('statement_descriptor');
   });

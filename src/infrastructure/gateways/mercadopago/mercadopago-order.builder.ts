@@ -10,6 +10,8 @@ export interface MpPayerInput {
   email: string;
   fullName: string;
   phone?: string | null;
+  /** Data de cadastro do aluno no sistema (ISO 8601 em additional_info). */
+  createdAt: Date;
   identification?: { type: string; number: string };
 }
 
@@ -59,6 +61,23 @@ export function splitBrazilPhone(phone?: string | null): { areaCode?: string; nu
   const areaCode = digits.slice(0, 2);
   const number = digits.slice(2);
   return { areaCode, number };
+}
+
+/** ISO 8601 com offset de Brasília — ex.: 2020-08-06T09:25:04.000-03:00 */
+export function formatMpPayerRegistrationDate(date: Date): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? '00';
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}.000-03:00`;
 }
 
 export function buildMpOrderBody(input: BuildMpOrderBodyInput): Record<string, unknown> {
@@ -155,6 +174,12 @@ export function buildMpOrderBody(input: BuildMpOrderBodyInput): Record<string, u
   if (input.marketplaceFee != null) {
     body.marketplace_fee = input.marketplaceFee;
   }
+
+  body.additional_info = {
+    payer: {
+      registration_date: formatMpPayerRegistrationDate(input.payer.createdAt),
+    },
+  };
 
   return body;
 }
