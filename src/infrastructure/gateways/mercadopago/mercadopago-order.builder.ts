@@ -10,7 +10,6 @@ export interface MpPayerInput {
   email: string;
   fullName: string;
   phone?: string | null;
-  createdAt: Date;
   identification?: { type: string; number: string };
 }
 
@@ -36,6 +35,13 @@ export interface BuildMpOrderBodyInput {
   marketplaceFee?: string | null;
 }
 
+/** Mercado Pago Orders: `items[].external_code` max 30 caracteres. */
+export const MP_ITEM_EXTERNAL_CODE_MAX_LEN = 30;
+
+export function toMpItemExternalCode(value: string): string {
+  return value.slice(0, MP_ITEM_EXTERNAL_CODE_MAX_LEN);
+}
+
 export function centsToAmountString(cents: number): string {
   return (cents / 100).toFixed(2);
 }
@@ -55,23 +61,6 @@ export function splitBrazilPhone(phone?: string | null): { areaCode?: string; nu
   return { areaCode, number };
 }
 
-/** Formato esperado pelo MP: 2020-08-06T09:25:04.000-03:00 */
-export function formatMpRegistrationDate(date: Date): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Sao_Paulo',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).formatToParts(date);
-  const get = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((p) => p.type === type)?.value ?? '00';
-  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}.000-03:00`;
-}
-
 export function buildMpOrderBody(input: BuildMpOrderBodyInput): Record<string, unknown> {
   const totalCents = input.items.reduce(
     (sum, item) => sum + item.unitPriceInCents * item.quantity,
@@ -86,7 +75,9 @@ export function buildMpOrderBody(input: BuildMpOrderBodyInput): Record<string, u
     unit_price: centsToAmountString(item.unitPriceInCents),
     quantity: item.quantity,
     category_id: item.categoryId ?? input.categoryId,
-    ...(item.externalCode ? { external_code: item.externalCode.slice(0, 64) } : {}),
+    ...(item.externalCode
+      ? { external_code: toMpItemExternalCode(item.externalCode) }
+      : {}),
   }));
 
   const payer: Record<string, unknown> = {
@@ -106,8 +97,6 @@ export function buildMpOrderBody(input: BuildMpOrderBodyInput): Record<string, u
   if (phone.areaCode && phone.number) {
     payer.phone = { area_code: phone.areaCode, number: phone.number };
   }
-
-  payer.registration_date = formatMpRegistrationDate(input.payer.createdAt);
 
   const zipCode = input.shipment.zipCode.replace(/\D/g, '').slice(0, 16);
   payer.address = {

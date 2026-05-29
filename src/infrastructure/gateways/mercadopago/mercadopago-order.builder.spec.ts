@@ -2,6 +2,7 @@ import {
   buildMpOrderBody,
   centsToAmountString,
   splitFullName,
+  toMpItemExternalCode,
 } from './mercadopago-order.builder';
 
 describe('mercadopago-order.builder', () => {
@@ -11,7 +12,6 @@ describe('mercadopago-order.builder', () => {
       email: 'aluno@test.com',
       fullName: 'Maria Silva Santos',
       phone: '11987654321',
-      createdAt: new Date('2025-01-15T12:00:00.000Z'),
       identification: { type: 'CPF', number: '123.456.789-09' },
     },
     paymentMethod: 'pix' as const,
@@ -64,13 +64,13 @@ describe('mercadopago-order.builder', () => {
       first_name: 'Maria',
       last_name: 'Silva Santos',
       identification: { type: 'CPF', number: '12345678909' },
-      registration_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000-03:00$/),
       address: expect.objectContaining({
         zip_code: '06233903',
         city: 'Osasco',
         state: 'São Paulo',
       }),
     });
+    expect(body.payer).not.toHaveProperty('registration_date');
     expect(body.shipment).toMatchObject({
       address: expect.objectContaining({
         zip_code: '06233903',
@@ -81,6 +81,26 @@ describe('mercadopago-order.builder', () => {
     expect(body).not.toHaveProperty('additional_info');
     expect(body).not.toHaveProperty('config');
     expect(body).not.toHaveProperty('statement_descriptor');
+  });
+
+  it('truncates plan UUID external_code to 30 chars for Orders API', () => {
+    const planId = 'f2ed90e5-f119-433c-9173-e3117e9480ec';
+    const body = buildMpOrderBody({
+      ...base,
+      items: [
+        {
+          title: 'Plano',
+          quantity: 1,
+          unitPriceInCents: 100,
+          externalCode: planId,
+        },
+      ],
+    });
+
+    expect((body.items as Array<{ external_code: string }>)[0].external_code).toBe(
+      toMpItemExternalCode(planId),
+    );
+    expect(toMpItemExternalCode(planId).length).toBeLessThanOrEqual(30);
   });
 
   it('includes marketplace_fee when provided', () => {
