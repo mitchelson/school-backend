@@ -47,6 +47,24 @@ bash /opt/school-backend/deploy/post-deploy.sh
 
 Ver [docs/BETTER-STACK.md](../docs/BETTER-STACK.md) — produto **CT095 School API**, separado do Zenvix.
 
+## Cron na VPS (root)
+
+Manter o backup do **zenvix** intacto. Jobs do **school-backend**:
+
+| Horário | Job |
+|---------|-----|
+| `0 3 * * *` | zenvix — `/var/www/zenvix-backend/scripts/backup.sh` (não alterar) |
+| `30 3 * * *` | school — `/opt/school-backend/deploy/backup-db.sh` |
+| `0 8 * * *` | school — aviso de plano a vencer (Resend) |
+
+```bash
+# Exemplo após deploy (CRON_SECRET vem do .env.production do school):
+0 8 * * * curl -sS -X POST https://api.ct095.com/api/v1/internal/cron/subscription-maintenance \
+  -H "Authorization: Bearer SEU_CRON_SECRET" >> /var/log/school-cron.log 2>&1
+```
+
+Variáveis de e-mail: `RESEND_API_KEY`, `EMAIL_FROM`, `FRONTEND_URL` (ver `.env.production.example`).
+
 ## CORS / erro “Origin www.ct095.com is not allowed” + 502
 
 O navegador mostra CORS quando a API responde **502** (nginx sem headers CORS) — a causa costuma ser API reiniciando ou crash, não só CORS.

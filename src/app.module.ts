@@ -19,6 +19,7 @@ import { MarketplaceModule } from './modules/marketplace/marketplace.module';
 import { PlatformModule } from './modules/platform/platform.module';
 import { OwnerModule } from './modules/owner/owner.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
+import { EmailModule } from './infrastructure/email/email.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { SubscriptionsModule } from './modules/subscriptions/subscriptions.modul
       isGlobal: true,
       envFilePath: getEnvFilePaths(),
     }),
+    EmailModule,
     PrismaModule,
     FirebaseModule,
     GatewaysModule,

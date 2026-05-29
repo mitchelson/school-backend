@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Patch,
+  Post,
   Param,
   Body,
   Query,
@@ -13,6 +14,8 @@ import {
   OwnerUsersQueryDto,
   UpdateUserRoleDto,
 } from './dto/owner.dto';
+import { OwnerInboxQueryDto, SendOwnerEmailDto } from './dto/owner-email.dto';
+import { ResendEmailService } from '../../infrastructure/email/resend-email.service';
 import { FirebaseAuthGuard } from '../../common/guards/firebase-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -22,7 +25,10 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 @UseGuards(FirebaseAuthGuard, RolesGuard)
 @Roles('owner')
 export class OwnerController {
-  constructor(private ownerService: OwnerService) {}
+  constructor(
+    private ownerService: OwnerService,
+    private emailService: ResendEmailService,
+  ) {}
 
   @Get('summary')
   summary() {
@@ -91,5 +97,25 @@ export class OwnerController {
       Number(query.limit) || 30,
       query.status,
     );
+  }
+
+  @Get('email/config')
+  emailConfig() {
+    return this.emailService.getOwnerConfig();
+  }
+
+  @Post('email/send')
+  sendEmail(@Body() dto: SendOwnerEmailDto) {
+    return this.emailService.sendCustomEmail(dto);
+  }
+
+  @Get('email/inbox')
+  listInbox(@Query() query: OwnerInboxQueryDto) {
+    return this.emailService.listReceivedEmails(Number(query.limit) || 30);
+  }
+
+  @Get('email/inbox/:id')
+  getInboxEmail(@Param('id') id: string) {
+    return this.emailService.getReceivedEmail(id);
   }
 }
