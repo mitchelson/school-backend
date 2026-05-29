@@ -61,6 +61,10 @@ export class PaymentCheckoutService {
     const student = await this.prisma.user.findUnique({ where: { id: studentId } });
     if (!student) throw new BadRequestException('Aluno não encontrado');
 
+    if (paymentMethod === 'card' && !cardToken?.trim()) {
+      throw new BadRequestException('Token do cartão é obrigatório para pagamento com cartão');
+    }
+
     const split = await this.buildSplit(plan.priceInCents, paymentMethod, installments);
 
     await this.cancelPendingPayments(studentId);
@@ -132,6 +136,10 @@ export class PaymentCheckoutService {
   ) {
     const student = await this.prisma.user.findUnique({ where: { id: studentId } });
     if (!student) throw new BadRequestException('Aluno não encontrado');
+
+    if (paymentMethod === 'card' && !cardToken?.trim()) {
+      throw new BadRequestException('Token do cartão é obrigatório para pagamento com cartão');
+    }
 
     const unitPrice = await this.platformSettings.getCreditUnitPriceCents();
     const amountInCents = quantity * unitPrice;
