@@ -10,7 +10,7 @@ export interface MpPayerInput {
   email: string;
   fullName: string;
   phone?: string | null;
-  /** Data de cadastro do aluno no sistema (ISO 8601 em additional_info). */
+  /** Data de cadastro do aluno (additional_info.payer — apenas cartão). */
   createdAt: Date;
   identification?: { type: string; number: string };
 }
@@ -175,11 +175,14 @@ export function buildMpOrderBody(input: BuildMpOrderBodyInput): Record<string, u
     body.marketplace_fee = input.marketplaceFee;
   }
 
-  body.additional_info = {
-    payer: {
-      registration_date: formatMpPayerRegistrationDate(input.payer.createdAt),
-    },
-  };
+  // Orders API: additional_info.payer só é aceito em cartão; Pix retorna 400.
+  if (input.paymentMethod === 'card') {
+    body.additional_info = {
+      payer: {
+        registration_date: formatMpPayerRegistrationDate(input.payer.createdAt),
+      },
+    };
+  }
 
   return body;
 }

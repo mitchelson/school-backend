@@ -72,13 +72,7 @@ describe('mercadopago-order.builder', () => {
       }),
     });
     expect(body.payer).not.toHaveProperty('registration_date');
-    expect(body.additional_info).toEqual({
-      payer: {
-        registration_date: expect.stringMatching(
-          /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000-03:00$/,
-        ),
-      },
-    });
+    expect(body).not.toHaveProperty('additional_info');
     expect(body).not.toHaveProperty('config');
     expect(body).not.toHaveProperty('statement_descriptor');
   });
@@ -152,5 +146,12 @@ describe('mercadopago-order.builder', () => {
     const payment = (body.transactions as { payments: Array<{ payment_method: Record<string, unknown> }> })
       .payments[0];
     expect(payment.payment_method.statement_descriptor).toBe('CT095');
+    expect(body.additional_info).toEqual({
+      payer: {
+        registration_date: expect.stringMatching(
+          /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000-03:00$/,
+        ),
+      },
+    });
   });
 });
