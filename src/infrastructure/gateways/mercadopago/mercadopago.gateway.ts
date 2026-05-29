@@ -1,10 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
-  buildMpOrderBody,
-  type MpOrderItemInput,
+  buildMpPaymentBody,
+  type MpPaymentItemInput,
   type MpPayerInput,
-} from './mercadopago-order.builder';
+} from './mercadopago-payment.builder';
 
 export interface MercadoPagoMarketplaceSplit {
   applicationFeeInCents: number;
@@ -13,7 +13,7 @@ export interface MercadoPagoMarketplaceSplit {
 
 export interface CheckoutInput {
   paymentId: string;
-  items: MpOrderItemInput[];
+  items: MpPaymentItemInput[];
   payer: MpPayerInput;
   paymentMethod: 'pix' | 'card';
   cardToken?: string;
@@ -25,7 +25,6 @@ export interface CheckoutInput {
 
 export interface CheckoutResult {
   externalId: string;
-  orderExternalId?: string;
   qrCode?: string;
   qrCodeBase64?: string;
   immediatelyApproved?: boolean;
@@ -40,7 +39,7 @@ export interface PaymentSnapshot {
 /** Valores reais após liquidação MP (para reconciliar split). */
 export interface PaymentSettlementSnapshot {
   grossInCents: number;
-  /** Valor disponível após taxa MP, antes do marketplace_fee. */
+  /** Valor disponível após taxa MP, antes do application_fee. */
   netReceivedInCents: number;
   mpFeeInCents: number;
   /** Comissão marketplace creditada à conta da aplicação (centavos), se informada pelo MP. */
@@ -56,74 +55,38 @@ export class MercadoPagoGateway {
   constructor(private config: ConfigService) {}
 
   async createCheckout(input: CheckoutInput): Promise<CheckoutResult> {
-    if (input.paymentMethod === 'card') {
-      return this.createCardPayment(input);
-    }
-    return this.createPixOrder(input);
-  }
+    const body = this.buildPaymentBody(input);
+    this.logApplicationFee(body, input.paymentId);
 
-  /**
-   * Pix via Orders API (POST /v1/orders).
-   * Returns QR code for the student to scan.
-   */
-  private async createPixOrder(input: CheckoutInput): Promise<CheckoutResult> {
-    const body = this.buildOrderBody(input);
-    this.logMarketplaceFeeOnOrder(body, input.paymentId);
-
-    const order = await this.postOrder(
+    const payment = await this.postPayment(
       body,
       input.paymentId,
       input.mercadopagoMarketplace?.sellerAccessToken,
       input.deviceSessionId,
     );
-    const payment = order.transactions?.payments?.[0];
 
-    if (!payment?.payment_method?.qr_code) {
-      throw new Error('Mercado Pago não retornou QR Code Pix');
+    if (input.paymentMethod === 'pix') {
+      const txData = payment.point_of_interaction?.transaction_data;
+      const qrCode = txData?.qr_code;
+      if (!qrCode) {
+        throw new Error('Mercado Pago não retornou QR Code Pix');
+      }
+
+      return {
+        externalId: String(payment.id),
+        qrCode,
+        qrCodeBase64: txData?.qr_code_base64,
+      };
     }
 
     return {
-      externalId: payment.id,
-      orderExternalId: order.id,
-      qrCode: payment.payment_method.qr_code,
-      qrCodeBase64: payment.payment_method.qr_code_base64,
+      externalId: String(payment.id),
+      immediatelyApproved: payment.status === 'approved',
     };
   }
 
   /**
-   * Card via Orders API (POST /v1/orders).
-   * May be immediately approved.
-   */
-  private async createCardPayment(input: CheckoutInput): Promise<CheckoutResult> {
-    if (!input.cardToken) throw new Error('Token do cartão é obrigatório');
-
-    const body = this.buildOrderBody(input);
-    this.logMarketplaceFeeOnOrder(body, input.paymentId);
-
-    const order = await this.postOrder(
-      body,
-      input.paymentId,
-      input.mercadopagoMarketplace?.sellerAccessToken,
-      input.deviceSessionId,
-    );
-    const payment = order.transactions?.payments?.[0];
-
-    const payStatus = (payment?.status ?? '').toLowerCase();
-    const ordStatus = (order.status ?? '').toLowerCase();
-
-    return {
-      externalId: payment?.id ?? order.id,
-      orderExternalId: order.id,
-      immediatelyApproved: payStatus === 'approved' || ordStatus === 'processed',
-    };
-  }
-
-  /**
-   * Fetch payment status from MP API (used during webhook processing to confirm).
-   */
-  /**
-   * Busca taxas reais do pagamento (GET payment ou payment dentro da order).
-   * net_received ≈ valor "em mãos" após MP descontar a taxa de processamento.
+   * Busca taxas reais do pagamento (GET /v1/payments ou order legada ORD…).
    */
   async fetchPaymentSettlement(
     externalId: string,
@@ -141,14 +104,18 @@ export class MercadoPagoGateway {
     }
   }
 
-  async fetchPaymentStatus(externalId: string): Promise<PaymentSnapshot> {
-    const isOrder = externalId.startsWith('ORD');
-    const url = isOrder
-      ? `${this.apiBase}/v1/orders/${externalId}`
-      : `${this.apiBase}/v1/payments/${externalId}`;
+  async fetchPaymentStatus(
+    externalId: string,
+    bearerToken?: string,
+  ): Promise<PaymentSnapshot> {
+    const token = bearerToken?.trim() || this.getAccessToken();
 
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${this.getAccessToken()}` },
+    if (externalId.startsWith('ORD')) {
+      return this.fetchOrderPaymentStatus(externalId, token);
+    }
+
+    const response = await fetch(`${this.apiBase}/v1/payments/${externalId}`, {
+      headers: { Authorization: `Bearer ${token}` },
     });
 
     if (!response.ok) {
@@ -156,15 +123,6 @@ export class MercadoPagoGateway {
     }
 
     const data = await response.json();
-
-    if (isOrder) {
-      const status = this.mapOrderStatus(data.status);
-      return {
-        externalId: data.transactions?.payments?.[0]?.id ?? externalId,
-        externalReference: data.external_reference ?? '',
-        status,
-      };
-    }
 
     return {
       externalId: String(data.id),
@@ -207,11 +165,6 @@ export class MercadoPagoGateway {
   }
 
   /**
-   * Validate webhook HMAC signature.
-   * MP sends: x-signature: ts=...,v1=...
-   * Manifest: id:{data.id};request-id:{x-request-id};ts:{ts};
-   */
-  /**
    * `data.id` da query string (como o MP assina). IDs alfanuméricos (ex. ORD…) vão em minúsculas.
    */
   resolveWebhookDataId(
@@ -226,7 +179,7 @@ export class MercadoPagoGateway {
 
   validateSignature(headers: Record<string, string | undefined>, dataId: string): boolean {
     const secret = this.config.get<string>('MERCADOPAGO_WEBHOOK_SECRET');
-    if (!secret) return true; // No secret configured = skip validation (dev mode)
+    if (!secret) return true;
 
     const normalizedHeaders = Object.fromEntries(
       Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]),
@@ -264,6 +217,29 @@ export class MercadoPagoGateway {
     return 'pending';
   }
 
+  /** Compatibilidade com pagamentos legados criados via Orders API (ORD…). */
+  private async fetchOrderPaymentStatus(
+    orderId: string,
+    token: string,
+  ): Promise<PaymentSnapshot> {
+    const response = await fetch(`${this.apiBase}/v1/orders/${orderId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) {
+      throw new Error(`MP API retornou ${response.status}`);
+    }
+
+    const data = await response.json();
+    const payId = data.transactions?.payments?.[0]?.id;
+
+    return {
+      externalId: payId ? String(payId) : orderId,
+      externalReference: data.external_reference ?? '',
+      status: this.mapOrderStatus(data.status),
+    };
+  }
+
   private async fetchOrderSettlement(
     orderId: string,
     token: string,
@@ -278,7 +254,11 @@ export class MercadoPagoGateway {
     const payId = order.transactions?.payments?.[0]?.id;
     if (!payId) return null;
 
-    return this.fetchPaymentSettlementById(String(payId), token);
+    const numericId = String(payId);
+    if (/^\d+$/.test(numericId)) {
+      return this.fetchPaymentSettlementById(numericId, token);
+    }
+    return null;
   }
 
   private async fetchPaymentSettlementById(
@@ -333,14 +313,14 @@ export class MercadoPagoGateway {
     };
   }
 
-  private logMarketplaceFeeOnOrder(body: Record<string, unknown>, paymentId: string): void {
-    const fee = body.marketplace_fee;
-    if (fee != null && fee !== '') {
-      this.logger.log(`MP order ${paymentId}: marketplace_fee=${fee}`);
+  private logApplicationFee(body: Record<string, unknown>, paymentId: string): void {
+    const fee = body.application_fee;
+    if (fee != null && fee !== '' && Number(fee) > 0) {
+      this.logger.log(`MP payment ${paymentId}: application_fee=${fee}`);
       return;
     }
     this.logger.warn(
-      `MP order ${paymentId}: marketplace_fee ausente — split da plataforma não será aplicado neste pedido`,
+      `MP payment ${paymentId}: application_fee ausente — split da plataforma não será aplicado`,
     );
   }
 
@@ -350,19 +330,21 @@ export class MercadoPagoGateway {
     return 'pending';
   }
 
-  private buildOrderBody(input: CheckoutInput): Record<string, unknown> {
-    return buildMpOrderBody({
+  private buildPaymentBody(input: CheckoutInput): Record<string, unknown> {
+    if (input.paymentMethod === 'card' && !input.cardToken) {
+      throw new Error('Token do cartão é obrigatório');
+    }
+
+    return buildMpPaymentBody({
       paymentId: input.paymentId,
       items: input.items,
       payer: input.payer,
       paymentMethod: input.paymentMethod,
       statementDescriptor: this.getStatementDescriptor(),
-      categoryId: this.config.get<string>('MP_ORDER_CATEGORY_ID')?.trim() || 'services',
-      shipment: this.getDefaultShipment(),
       cardToken: input.cardToken,
       paymentMethodId: input.paymentMethodId,
       installments: input.installments,
-      marketplaceFee: this.resolveMarketplaceFee(input),
+      applicationFee: this.resolveApplicationFee(input),
     });
   }
 
@@ -372,30 +354,16 @@ export class MercadoPagoGateway {
     ).slice(0, 50);
   }
 
-  private getDefaultShipment() {
-    return {
-      zipCode:
-        this.config.get<string>('MP_SCHOOL_ZIP_CODE')?.trim() || '06233903',
-      cityName: this.config.get<string>('MP_SCHOOL_CITY')?.trim() || 'Osasco',
-      stateName:
-        this.config.get<string>('MP_SCHOOL_STATE')?.trim() || 'São Paulo',
-      streetName:
-        this.config.get<string>('MP_SCHOOL_STREET')?.trim() ||
-        'Av. das Nações Unidas',
-      streetNumber: this.config.get<string>('MP_SCHOOL_STREET_NUMBER')?.trim() || '3003',
-    };
-  }
-
-  private resolveMarketplaceFee(input: CheckoutInput): string | null {
+  private resolveApplicationFee(input: CheckoutInput): number | null {
     const split = input.mercadopagoMarketplace;
     if (!split || split.applicationFeeInCents <= 0) return null;
     if (!split.sellerAccessToken?.trim()) {
       throw new Error('Split Mercado Pago exige token do vendedor (admin conectado).');
     }
-    return (split.applicationFeeInCents / 100).toFixed(2);
+    return split.applicationFeeInCents / 100;
   }
 
-  private async postOrder(
+  private async postPayment(
     body: Record<string, unknown>,
     idempotencyKey: string,
     sellerAccessToken?: string,
@@ -412,7 +380,7 @@ export class MercadoPagoGateway {
       headers['X-meli-session-id'] = sessionId;
     }
 
-    const response = await fetch(`${this.apiBase}/v1/orders`, {
+    const response = await fetch(`${this.apiBase}/v1/payments`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
@@ -420,7 +388,7 @@ export class MercadoPagoGateway {
 
     if (!response.ok) {
       const errText = await response.text().catch(() => '');
-      this.logger.error(`MP Orders API error ${response.status}: ${errText.slice(0, 800)}`);
+      this.logger.error(`MP Payments API error ${response.status}: ${errText.slice(0, 800)}`);
       throw new Error(`Mercado Pago retornou ${response.status}`);
     }
 

@@ -2,7 +2,7 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { MercadoPagoGateway } from '../../infrastructure/gateways/mercadopago/mercadopago.gateway';
-import type { MpPayerInput } from '../../infrastructure/gateways/mercadopago/mercadopago-order.builder';
+import type { MpPayerInput } from '../../infrastructure/gateways/mercadopago/mercadopago-payment.builder';
 import { MpSellerService } from '../marketplace/mp-seller.service';
 import { PlatformSettingsService } from '../marketplace/platform-settings.service';
 import { SplitCalculatorService } from '../marketplace/split-calculator.service';
@@ -306,7 +306,7 @@ export class PaymentCheckoutService {
       settlement.marketplaceFeeInCents === 0
     ) {
       this.logger.warn(
-        `Payment ${paymentId}: esperava marketplace_fee ~${expectedPlatformFee}c no MP, mas fee_details não reportou comissão — verifique app Marketplace e OAuth da escola`,
+        `Payment ${paymentId}: esperava application_fee ~${expectedPlatformFee}c no MP, mas fee_details não reportou comissão — verifique app Marketplace e OAuth da escola`,
       );
     }
 
@@ -351,7 +351,7 @@ export class PaymentCheckoutService {
     const totalFeePercent = await this.platformSettings.getTotalFeePercent();
     if (totalFeePercent > 0 && breakdown.applicationFeeInCents <= 0) {
       this.logger.warn(
-        `Split ${paymentMethod}: taxa configurada ${totalFeePercent}% mas marketplace_fee=0 ` +
+        `Split ${paymentMethod}: taxa configurada ${totalFeePercent}% mas application_fee=0 ` +
           `(gross=${amountInCents}c net=${breakdown.netAvailableInCents}c seller=${breakdown.sellerAmountInCents}c)`,
       );
     } else if (breakdown.applicationFeeInCents > 0) {
@@ -432,13 +432,13 @@ export class PaymentCheckoutService {
 
   private async saveCheckoutResult(
     paymentId: string,
-    result: { externalId: string; orderExternalId?: string; qrCode?: string; qrCodeBase64?: string },
+    result: { externalId: string; qrCode?: string; qrCodeBase64?: string },
     paymentMethod: 'pix' | 'card',
   ) {
     await this.prisma.payment.update({
       where: { id: paymentId },
       data: {
-        mpPaymentId: result.orderExternalId ?? result.externalId,
+        mpPaymentId: result.externalId,
         ...(paymentMethod === 'pix'
           ? {
               pixQrCode: result.qrCode ?? null,

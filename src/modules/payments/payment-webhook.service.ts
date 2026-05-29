@@ -1,6 +1,7 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { MercadoPagoGateway } from '../../infrastructure/gateways/mercadopago/mercadopago.gateway';
+import { MpSellerService } from '../marketplace/mp-seller.service';
 import { PaymentCheckoutService } from './payment-checkout.service';
 
 @Injectable()
@@ -11,6 +12,7 @@ export class PaymentWebhookService {
     private prisma: PrismaService,
     private gateway: MercadoPagoGateway,
     private checkoutService: PaymentCheckoutService,
+    private mpSeller: MpSellerService,
   ) {}
 
   async handleMercadoPagoWebhook(
@@ -47,7 +49,10 @@ export class PaymentWebhookService {
 
     if (!payment) {
       // Try to find by external_reference (paymentId) via MP API
-      const snapshot = await this.gateway.fetchPaymentStatus(externalId);
+      const snapshot = await this.gateway.fetchPaymentStatus(
+        externalId,
+        await this.resolveSellerToken(),
+      );
       if (!snapshot.externalReference) {
         this.logger.warn(`Payment not found for external ID: ${externalId}`);
         return { message: 'pagamento não encontrado' };
@@ -80,9 +85,20 @@ export class PaymentWebhookService {
     }
 
     // 5. Confirm status via MP API (don't trust webhook payload alone)
-    const snapshot = await this.gateway.fetchPaymentStatus(externalId);
+    const snapshot = await this.gateway.fetchPaymentStatus(
+      externalId,
+      await this.resolveSellerToken(),
+    );
 
     return this.processPayment(payment.id, snapshot.status);
+  }
+
+  private async resolveSellerToken(): Promise<string | undefined> {
+    try {
+      return await this.mpSeller.getSellerAccessToken();
+    } catch {
+      return undefined;
+    }
   }
 
   private async processPayment(

@@ -21,7 +21,7 @@ export interface MarketplaceSplitBreakdown {
  * Split residual (modelo "em mãos"):
  * 1. Vendedor recebe (100% − taxaTotal)% do bruto — ex.: 93% com taxa 7%.
  * 2. MP cobra primeiro → sobra netAvailable = bruto − mpFee.
- * 3. Plataforma (marketplace_fee) = netAvailable − repasseVendedor.
+ * 3. Plataforma (application_fee) = netAvailable − repasseVendedor.
  *
  * Ex. R$ 100 Pix, MP R$ 0,99, taxa total 7%:
  *   vendedor = R$ 93 | em mãos = R$ 99,01 | plataforma = 99,01 − 93 = R$ 6,01
