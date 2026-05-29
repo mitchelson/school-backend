@@ -90,6 +90,8 @@ export function buildMpOrderBody(input: BuildMpOrderBodyInput): Record<string, u
     payer.phone = { area_code: phone.areaCode, number: phone.number };
   }
 
+  const statementDescriptor = input.statementDescriptor.slice(0, 50);
+
   const paymentMethod: Record<string, unknown> =
     input.paymentMethod === 'pix'
       ? { id: 'pix', type: 'bank_transfer' }
@@ -98,7 +100,7 @@ export function buildMpOrderBody(input: BuildMpOrderBodyInput): Record<string, u
           type: 'credit_card',
           token: input.cardToken,
           installments: input.installments ?? 1,
-          statement_descriptor: input.statementDescriptor.slice(0, 50),
+          statement_descriptor: statementDescriptor,
         };
 
   const body: Record<string, unknown> = {
@@ -106,6 +108,7 @@ export function buildMpOrderBody(input: BuildMpOrderBodyInput): Record<string, u
     processing_mode: 'automatic',
     external_reference: input.paymentId,
     total_amount: totalAmount,
+    statement_descriptor: statementDescriptor,
     description: items[0]?.title ?? 'CT095',
     payer,
     items,

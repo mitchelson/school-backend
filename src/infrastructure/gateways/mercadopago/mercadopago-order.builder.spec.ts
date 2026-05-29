@@ -74,6 +74,7 @@ describe('mercadopago-order.builder', () => {
     });
     expect(body).not.toHaveProperty('additional_info');
     expect(body).not.toHaveProperty('config');
+    expect(body.statement_descriptor).toBe('CT095');
   });
 
   it('includes marketplace_fee when provided', () => {
@@ -100,6 +101,18 @@ describe('mercadopago-order.builder', () => {
 
     expect(body.total_amount).toBe('75.00');
     expect((body.items as Array<{ quantity: number }>)[0].quantity).toBe(3);
+  });
+
+  it('includes statement_descriptor on pix orders at root', () => {
+    const body = buildMpOrderBody({
+      ...base,
+      items: [{ title: 'Plano', quantity: 1, unitPriceInCents: 100 }],
+    });
+
+    expect(body.statement_descriptor).toBe('CT095');
+    const payment = (body.transactions as { payments: Array<{ payment_method: Record<string, unknown> }> })
+      .payments[0];
+    expect(payment.payment_method).not.toHaveProperty('statement_descriptor');
   });
 
   it('includes statement_descriptor on card payments', () => {
