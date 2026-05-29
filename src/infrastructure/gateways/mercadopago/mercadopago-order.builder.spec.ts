@@ -74,7 +74,7 @@ describe('mercadopago-order.builder', () => {
     });
     expect(body).not.toHaveProperty('additional_info');
     expect(body).not.toHaveProperty('config');
-    expect(body.statement_descriptor).toBe('CT095');
+    expect(body).not.toHaveProperty('statement_descriptor');
   });
 
   it('includes marketplace_fee when provided', () => {
@@ -103,13 +103,13 @@ describe('mercadopago-order.builder', () => {
     expect((body.items as Array<{ quantity: number }>)[0].quantity).toBe(3);
   });
 
-  it('includes statement_descriptor on pix orders at root', () => {
+  it('does not send statement_descriptor on pix (Orders API rejects at root)', () => {
     const body = buildMpOrderBody({
       ...base,
       items: [{ title: 'Plano', quantity: 1, unitPriceInCents: 100 }],
     });
 
-    expect(body.statement_descriptor).toBe('CT095');
+    expect(body).not.toHaveProperty('statement_descriptor');
     const payment = (body.transactions as { payments: Array<{ payment_method: Record<string, unknown> }> })
       .payments[0];
     expect(payment.payment_method).not.toHaveProperty('statement_descriptor');

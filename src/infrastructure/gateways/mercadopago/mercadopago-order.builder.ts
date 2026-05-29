@@ -108,7 +108,6 @@ export function buildMpOrderBody(input: BuildMpOrderBodyInput): Record<string, u
     processing_mode: 'automatic',
     external_reference: input.paymentId,
     total_amount: totalAmount,
-    statement_descriptor: statementDescriptor,
     description: items[0]?.title ?? 'CT095',
     payer,
     items,
