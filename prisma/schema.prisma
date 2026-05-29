@@ -52,6 +52,7 @@ enum PaymentStatus {
   pending
   paid
   failed
+  cancelled
 }
 
 enum PaymentMethod {
@@ -211,6 +212,8 @@ model Payment {
   creditQuantity Int?
   gateway        String         @default("mercadopago")
   mpPaymentId           String?        @unique
+  pixQrCode             String?        @db.Text
+  pixQrCodeBase64       String?        @db.Text
   applicationFeeInCents Int?
   mpFeeInCents          Int?
   netAvailableInCents   Int?

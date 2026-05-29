@@ -23,7 +23,9 @@ export class DashboardService {
         (subscription.validUntil.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
       ));
       subscriptionData = {
+        planId: subscription.planId,
         planName: subscription.plan.name,
+        weeklyLimit: subscription.plan.weeklyLimit,
         validUntil: subscription.validUntil.toISOString(),
         daysRemaining,
         status: now <= subscription.validUntil ? 'active' as const : 'expired' as const,

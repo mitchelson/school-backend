@@ -100,8 +100,24 @@ export class PaymentsController {
       where: { studentId: userId, status: 'pending' },
       orderBy: { createdAt: 'desc' },
       take: 5,
-      include: { plan: { select: { name: true } } },
+      select: {
+        id: true,
+        amountInCents: true,
+        purpose: true,
+        creditQuantity: true,
+        paymentMethod: true,
+        createdAt: true,
+        pixQrCode: true,
+        pixQrCodeBase64: true,
+        plan: { select: { id: true, name: true } },
+      },
     });
+  }
+
+  @Post(':id/cancel')
+  @UseGuards(FirebaseAuthGuard)
+  cancel(@CurrentUser('id') userId: string, @Param('id') id: string) {
+    return this.checkoutService.cancelPendingPayment(userId, id);
   }
 
   @Get('status/:id')

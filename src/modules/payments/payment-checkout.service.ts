@@ -63,6 +63,8 @@ export class PaymentCheckoutService {
 
     const split = await this.buildSplit(plan.priceInCents, paymentMethod, installments);
 
+    await this.cancelPendingPayments(studentId);
+
     const payment = await this.prisma.payment.create({
       data: {
         studentId,
@@ -101,11 +103,7 @@ export class PaymentCheckoutService {
       mercadopagoMarketplace: split.marketplace,
     });
 
-    // Save external ID
-    await this.prisma.payment.update({
-      where: { id: payment.id },
-      data: { mpPaymentId: result.orderExternalId ?? result.externalId },
-    });
+    await this.saveCheckoutResult(payment.id, result, paymentMethod);
 
     // If card was immediately approved, fulfill now
     if (result.immediatelyApproved) {
@@ -138,6 +136,8 @@ export class PaymentCheckoutService {
     const unitPrice = await this.platformSettings.getCreditUnitPriceCents();
     const amountInCents = quantity * unitPrice;
     const split = await this.buildSplit(amountInCents, paymentMethod, installments);
+
+    await this.cancelPendingPayments(studentId);
 
     const payment = await this.prisma.payment.create({
       data: {
@@ -177,10 +177,7 @@ export class PaymentCheckoutService {
       mercadopagoMarketplace: split.marketplace,
     });
 
-    await this.prisma.payment.update({
-      where: { id: payment.id },
-      data: { mpPaymentId: result.orderExternalId ?? result.externalId },
-    });
+    await this.saveCheckoutResult(payment.id, result, paymentMethod);
 
     if (result.immediatelyApproved) {
       await this.fulfillPayment(payment.id);
@@ -193,6 +190,28 @@ export class PaymentCheckoutService {
       qrCode: result.qrCode,
       qrCodeBase64: result.qrCodeBase64,
     };
+  }
+
+  /** Cancela um Pix abandonado pelo aluno (não libera plano/créditos). */
+  async cancelPendingPayment(studentId: string, paymentId: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: { id: paymentId, studentId },
+    });
+    if (!payment || payment.status !== 'pending') {
+      return { ok: true };
+    }
+
+    await this.prisma.payment.update({
+      where: { id: paymentId },
+      data: {
+        status: 'cancelled',
+        pixQrCode: null,
+        pixQrCodeBase64: null,
+      },
+    });
+
+    this.logger.log(`Payment ${paymentId} cancelled by student ${studentId}`);
+    return { ok: true };
   }
 
   /**
@@ -378,6 +397,36 @@ export class PaymentCheckoutService {
       type: identificationType ?? 'CPF',
       number: digits,
     };
+  }
+
+  private async cancelPendingPayments(studentId: string) {
+    await this.prisma.payment.updateMany({
+      where: { studentId, status: 'pending' },
+      data: {
+        status: 'cancelled',
+        pixQrCode: null,
+        pixQrCodeBase64: null,
+      },
+    });
+  }
+
+  private async saveCheckoutResult(
+    paymentId: string,
+    result: { externalId: string; orderExternalId?: string; qrCode?: string; qrCodeBase64?: string },
+    paymentMethod: 'pix' | 'card',
+  ) {
+    await this.prisma.payment.update({
+      where: { id: paymentId },
+      data: {
+        mpPaymentId: result.orderExternalId ?? result.externalId,
+        ...(paymentMethod === 'pix'
+          ? {
+              pixQrCode: result.qrCode ?? null,
+              pixQrCodeBase64: result.qrCodeBase64 ?? null,
+            }
+          : {}),
+      },
+    });
   }
 
   private isDevSimulate(): boolean {
