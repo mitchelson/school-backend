@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { CreatePlanDto, UpdatePlanDto } from './dto/plans.dto';
 import { MpSellerService } from '../marketplace/mp-seller.service';
 
@@ -8,6 +10,7 @@ export class PlansService {
   constructor(
     private prisma: PrismaService,
     private mpSeller: MpSellerService,
+    private audit: AuditService,
   ) {}
 
   async list(activeOnly: boolean) {
@@ -17,14 +20,36 @@ export class PlansService {
     });
   }
 
-  async create(dto: CreatePlanDto) {
+  async create(dto: CreatePlanDto, actor?: { id: string; role: Role }) {
     await this.mpSeller.requireMpConnected();
-    return this.prisma.plan.create({ data: dto });
+    const plan = await this.prisma.plan.create({ data: dto });
+    if (actor) {
+      await this.audit.log({
+        actorId: actor.id,
+        actorRole: actor.role,
+        action: 'plan.created',
+        entityType: 'plan',
+        entityId: plan.id,
+        metadata: { name: plan.name, priceInCents: plan.priceInCents },
+      });
+    }
+    return plan;
   }
 
-  async update(id: string, dto: UpdatePlanDto) {
+  async update(id: string, dto: UpdatePlanDto, actor?: { id: string; role: Role }) {
     await this.ensureExists(id);
-    return this.prisma.plan.update({ where: { id }, data: dto });
+    const plan = await this.prisma.plan.update({ where: { id }, data: dto });
+    if (actor) {
+      await this.audit.log({
+        actorId: actor.id,
+        actorRole: actor.role,
+        action: 'plan.updated',
+        entityType: 'plan',
+        entityId: id,
+        metadata: dto as Prisma.InputJsonValue,
+      });
+    }
+    return plan;
   }
 
   private async ensureExists(id: string) {

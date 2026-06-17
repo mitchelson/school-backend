@@ -2,7 +2,6 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppModule } from '../../src/app.module';
 import { FirebaseService } from '../../src/infrastructure/firebase/firebase.service';
-import { HttpExceptionFilter } from '../../src/common/filters/http-exception.filter';
 
 export const E2E_TEST_UID = 'e2e-firebase-uid';
 export const E2E_TEST_EMAIL = 'e2e-auth@ct095.test';
@@ -45,7 +44,6 @@ export async function createE2eApp(): Promise<{
       transform: true,
     }),
   );
-  app.useGlobalFilters(new HttpExceptionFilter());
   await app.init();
 
   return { app, firebase };

@@ -5,6 +5,7 @@ import { FirebaseAuthGuard } from '../../common/guards/firebase-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { Role } from '@prisma/client';
 
 @Controller('plans')
 @UseGuards(FirebaseAuthGuard, RolesGuard)
@@ -18,13 +19,22 @@ export class PlansController {
 
   @Post()
   @Roles('admin')
-  create(@Body() dto: CreatePlanDto) {
-    return this.plansService.create(dto);
+  create(
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('role') actorRole: Role,
+    @Body() dto: CreatePlanDto,
+  ) {
+    return this.plansService.create(dto, { id: actorId, role: actorRole });
   }
 
   @Patch(':id')
   @Roles('admin')
-  update(@Param('id') id: string, @Body() dto: UpdatePlanDto) {
-    return this.plansService.update(id, dto);
+  update(
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('role') actorRole: Role,
+    @Param('id') id: string,
+    @Body() dto: UpdatePlanDto,
+  ) {
+    return this.plansService.update(id, dto, { id: actorId, role: actorRole });
   }
 }

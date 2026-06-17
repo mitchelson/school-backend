@@ -15,6 +15,7 @@ export function createApplicationLogger(config: ConfigService): LoggerService {
   return new BetterStackNestLogger({
     sourceToken: token,
     service,
+    environment: config.get<string>('NODE_ENV') ?? 'development',
     ...(logsEndpoint ? { logsEndpoint } : {}),
   });
 }

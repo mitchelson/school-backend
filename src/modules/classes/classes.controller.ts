@@ -5,6 +5,7 @@ import { FirebaseAuthGuard } from '../../common/guards/firebase-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { Role } from '@prisma/client';
 
 @Controller('classes')
 @UseGuards(FirebaseAuthGuard, RolesGuard)
@@ -41,7 +42,12 @@ export class ClassesController {
 
   @Patch(':id/cancel')
   @Roles('admin')
-  cancel(@Param('id') id: string, @Body() dto: CancelClassDto) {
-    return this.classesService.cancel(id, dto);
+  cancel(
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('role') actorRole: Role,
+    @Param('id') id: string,
+    @Body() dto: CancelClassDto,
+  ) {
+    return this.classesService.cancel(id, dto, { id: actorId, role: actorRole });
   }
 }

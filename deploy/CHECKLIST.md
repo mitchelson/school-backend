@@ -13,6 +13,7 @@ Use antes e depois de cada deploy com dinheiro real.
 - [ ] `DATABASE_URL` apontando para `school_db`
 - [ ] `CORS_ORIGIN=https://ct095.com,https://www.ct095.com`
 - [ ] (Opcional) `CRON_ALLOWED_IPS=127.0.0.1,::1`
+- [ ] (Opcional) `BETTER_STACK_SOURCE_TOKEN`, `BETTER_STACK_LOGS_ENDPOINT`, `BETTER_STACK_SERVICE_NAME=school-api`
 
 ## Mercado Pago
 
@@ -38,8 +39,11 @@ Use antes e depois de cada deploy com dinheiro real.
 ## Pós-deploy
 
 ```bash
-curl -s https://api.ct095.com/api/v1/health
-# → { "status": "ok", ... }
+curl -s https://api.ct095.com/api/v1/health/live
+# → { "status": "ok" }
+
+curl -i https://api.ct095.com/api/v1/health/ready
+# → HTTP 200 se DB OK, 503 se degradado
 
 bash /opt/school-backend/deploy/post-deploy.sh
 ```

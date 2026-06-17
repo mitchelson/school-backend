@@ -1,5 +1,7 @@
 import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import type { Role } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { CreateStudentDto, UpdateStudentDto } from './dto/students.dto';
 import { createPendingFirebaseUid } from '../auth/pending-firebase-uid';
 
@@ -16,7 +18,10 @@ const SELECT_FIELDS = {
 
 @Injectable()
 export class StudentsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+  ) {}
 
   async list(search?: string, page = 1, limit = 20) {
     const take = Math.min(limit, 100);
@@ -88,13 +93,24 @@ export class StudentsService {
     });
   }
 
-  async deactivate(id: string) {
+  async deactivate(id: string, actor?: { id: string; role: Role }) {
     await this.ensureExists(id);
-    return this.prisma.user.update({
+    const user = await this.prisma.user.update({
       where: { id },
       data: { status: 'inactive' },
       select: SELECT_FIELDS,
     });
+    if (actor) {
+      await this.audit.log({
+        actorId: actor.id,
+        actorRole: actor.role,
+        action: 'student.deactivated',
+        entityType: 'user',
+        entityId: id,
+        metadata: { email: user.email },
+      });
+    }
+    return user;
   }
 
   async getMe(userId: string) {

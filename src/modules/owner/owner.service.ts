@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 
 const USER_LIST_SELECT = {
   id: true,
@@ -22,7 +23,10 @@ const USER_LIST_SELECT = {
 
 @Injectable()
 export class OwnerService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+  ) {}
 
   async getSummary() {
     const [
@@ -109,11 +113,26 @@ export class OwnerService {
       }
     }
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id: userId },
       data: { role },
       select: USER_LIST_SELECT,
     });
+
+    await this.audit.log({
+      actorId,
+      actorRole: 'owner',
+      action: 'user.role_updated',
+      entityType: 'user',
+      entityId: userId,
+      metadata: { previousRole: target.role, newRole: role },
+    });
+
+    return updated;
+  }
+
+  listAuditLogs(page = 1, limit = 50) {
+    return this.audit.listForOwner(page, limit);
   }
 
   async listMpAccounts() {

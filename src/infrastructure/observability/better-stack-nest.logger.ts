@@ -21,15 +21,18 @@ export type BetterStackLoggerOptions = {
   sourceToken: string;
   logsEndpoint?: string;
   service?: string;
+  environment?: string;
 };
 
 export class BetterStackNestLogger implements LoggerService {
   private readonly consoleLogger: ConsoleLogger;
   private readonly logtail?: Logtail;
   private readonly service: string;
+  private readonly environment: string;
 
   constructor(options?: BetterStackLoggerOptions) {
     this.service = options?.service ?? 'school-api';
+    this.environment = options?.environment ?? process.env.NODE_ENV ?? 'development';
     this.consoleLogger = new ConsoleLogger({ timestamp: true });
 
     if (!options?.sourceToken) return;
@@ -45,11 +48,39 @@ export class BetterStackNestLogger implements LoggerService {
     return this.logtail?.flush() ?? Promise.resolve();
   }
 
-  private meta(context?: string): Record<string, string> {
+  private meta(
+    context?: string,
+    extra?: Record<string, string | number | boolean>,
+  ): Record<string, string | number | boolean> {
     return {
       service: this.service,
+      environment: this.environment,
       ...(context ? { nest_context: context } : {}),
+      ...extra,
     };
+  }
+
+  logStructured(
+    level: 'info' | 'warn' | 'error' | 'debug',
+    message: string,
+    fields: Record<string, string | number | boolean>,
+    context?: string,
+  ): void {
+    const payload = { message, ...fields };
+    const line = JSON.stringify(payload);
+
+    if (level === 'error') this.consoleLogger.error(line, context);
+    else if (level === 'warn') this.consoleLogger.warn(line, context);
+    else if (level === 'debug') this.consoleLogger.debug?.(line, context);
+    else this.consoleLogger.log(line, context);
+
+    if (!this.logtail) return;
+
+    const meta = this.meta(context, fields);
+    if (level === 'error') void this.logtail.error(message, meta);
+    else if (level === 'warn') void this.logtail.warn(message, meta);
+    else if (level === 'debug') void this.logtail.debug(message, meta);
+    else void this.logtail.info(message, meta);
   }
 
   log(message: unknown, context?: string): void {
@@ -86,23 +117,6 @@ export class BetterStackNestLogger implements LoggerService {
     void this.logtail?.error(formatMessage(message), {
       ...this.meta(context),
       severity: 'fatal',
-    });
-  }
-
-  logHttp(
-    method: string,
-    url: string,
-    status: number,
-    durationMs: number,
-  ): void {
-    const msg = `${method} ${url} ${status} ${durationMs}ms`;
-    this.consoleLogger.log(msg, 'HTTP');
-    void this.logtail?.info(msg, {
-      ...this.meta('HTTP'),
-      http_method: method,
-      http_url: url,
-      http_status: String(status),
-      duration_ms: String(durationMs),
     });
   }
 }

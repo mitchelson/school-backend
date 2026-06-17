@@ -1,6 +1,7 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, HttpCode, HttpStatus, Res } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
+import type { Response } from 'express';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
 @Controller('health')
@@ -13,21 +14,40 @@ export class HealthController {
     private config: ConfigService,
   ) {}
 
-  @Get()
-  async check() {
-    const isProduction = this.config.get<string>('NODE_ENV') === 'production';
+  @Get('live')
+  @HttpCode(HttpStatus.OK)
+  live() {
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+    };
+  }
 
-    let dbOk = false;
-    try {
-      await this.prisma.$queryRaw`SELECT 1`;
-      dbOk = true;
-    } catch {}
+  @Get('ready')
+  async ready(@Res() res: Response) {
+    const dbOk = await this.checkDatabase();
+    const body = {
+      status: dbOk ? 'ok' : 'degraded',
+      db: dbOk ? 'connected' : 'disconnected',
+      timestamp: new Date().toISOString(),
+    };
+    res.status(dbOk ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE).json(body);
+  }
+
+  @Get()
+  async check(@Res() res: Response) {
+    const isProduction = this.config.get<string>('NODE_ENV') === 'production';
+    const dbOk = await this.checkDatabase();
 
     if (isProduction) {
-      return {
+      const body = {
         status: dbOk ? 'ok' : 'degraded',
         timestamp: new Date().toISOString(),
       };
+      res
+        .status(dbOk ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE)
+        .json(body);
+      return;
     }
 
     let platformSettingsTable = false;
@@ -61,7 +81,7 @@ export class HealthController {
 
     const ready = dbOk && platformSettingsTable && userMpColumns;
 
-    return {
+    const body = {
       status: ready ? 'ok' : dbOk ? 'degraded' : 'degraded',
       uptime: Math.floor((Date.now() - this.startedAt.getTime()) / 1000),
       timestamp: new Date().toISOString(),
@@ -71,5 +91,18 @@ export class HealthController {
         userMpColumns,
       },
     };
+
+    res
+      .status(ready ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE)
+      .json(body);
+  }
+
+  private async checkDatabase(): Promise<boolean> {
+    try {
+      await this.prisma.$queryRaw`SELECT 1`;
+      return true;
+    } catch {
+      return false;
+    }
   }
 }

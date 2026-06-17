@@ -4,7 +4,6 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { FirebaseService } from '../src/infrastructure/firebase/firebase.service';
 import { PrismaService } from '../src/infrastructure/prisma/prisma.service';
-import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
 import { createE2eApp, E2E_TEST_EMAIL, E2E_TEST_UID } from './helpers/e2e-app';
 
 async function initApp(module: TestingModule): Promise<INestApplication> {
@@ -17,7 +16,6 @@ async function initApp(module: TestingModule): Promise<INestApplication> {
       transform: true,
     }),
   );
-  app.useGlobalFilters(new HttpExceptionFilter());
   await app.init();
   return app;
 }
@@ -28,6 +26,22 @@ describe('Health (e2e)', () => {
     const response = await request(app.getHttpServer()).get('/api/v1/health');
     expect(response.status).toBe(200);
     expect(response.body.status).toBeDefined();
+    await app.close();
+  });
+
+  it('GET /api/v1/health/live returns ok', async () => {
+    const { app } = await createE2eApp();
+    const response = await request(app.getHttpServer()).get('/api/v1/health/live');
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('ok');
+    await app.close();
+  });
+
+  it('GET /api/v1/health/ready returns db status', async () => {
+    const { app } = await createE2eApp();
+    const response = await request(app.getHttpServer()).get('/api/v1/health/ready');
+    expect([200, 503]).toContain(response.status);
+    expect(response.body.db).toBeDefined();
     await app.close();
   });
 });

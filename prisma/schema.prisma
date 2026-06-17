@@ -68,6 +68,14 @@ enum PaymentPurpose {
 enum NotificationType {
   enrollment_confirmed
   class_cancelled
+  waitlist_joined
+  waitlist_promoted
+}
+
+enum WaitlistStatus {
+  waiting
+  promoted
+  cancelled
 }
 
 // ─── Models ───────────────────────────────────────────────────────────────────
@@ -97,8 +105,10 @@ model User {
   subscription    Subscription?
   tokenBalance    StudentTokenBalance?
   enrollments     ClassAttendance[]
+  waitlistEntries ClassWaitlistEntry[]
   payments        Payment[]
   notifications   Notification[]
+  auditLogs       AuditLog[]       @relation("AuditActor")
 
   @@index([email])
   @@index([firebaseUid])
@@ -177,6 +187,7 @@ model ClassInstance {
 
   series      ClassSeries?      @relation(fields: [seriesId], references: [id], onDelete: SetNull)
   attendances ClassAttendance[]
+  waitlist    ClassWaitlistEntry[]
 
   @@index([date])
   @@index([status])
@@ -200,6 +211,42 @@ model ClassAttendance {
   @@index([studentId])
   @@index([classInstanceId])
   @@index([status])
+}
+
+model ClassWaitlistEntry {
+  id              String         @id @default(uuid())
+  studentId       String
+  classInstanceId String
+  status          WaitlistStatus @default(waiting)
+  position        Int
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  student       User          @relation(fields: [studentId], references: [id])
+  classInstance ClassInstance @relation(fields: [classInstanceId], references: [id])
+
+  @@unique([studentId, classInstanceId])
+  @@index([classInstanceId, status, createdAt])
+  @@index([studentId, status])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  actorRole  Role?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([actorId])
 }
 
 model Payment {

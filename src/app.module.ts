@@ -1,9 +1,12 @@
-import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { getEnvFilePaths } from './config/env-files';
 import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { HttpLoggerMiddleware } from './common/middleware/http-logger.middleware';
+import { ObservabilityModule } from './infrastructure/observability/observability.module';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { FirebaseModule } from './infrastructure/firebase/firebase.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -23,6 +26,7 @@ import { PlatformModule } from './modules/platform/platform.module';
 import { OwnerModule } from './modules/owner/owner.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { EmailModule } from './infrastructure/email/email.module';
+import { AuditModule } from './modules/audit/audit.module';
 
 @Module({
   imports: [
@@ -42,6 +46,8 @@ import { EmailModule } from './infrastructure/email/email.module';
         ];
       },
     }),
+    ObservabilityModule,
+    AuditModule,
     EmailModule,
     PrismaModule,
     FirebaseModule,
@@ -67,6 +73,14 @@ import { EmailModule } from './infrastructure/email/email.module';
       provide: APP_GUARD,
       useClass: AppThrottlerGuard,
     },
+    {
+      provide: APP_FILTER,
+      useClass: HttpExceptionFilter,
+    },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(HttpLoggerMiddleware).forRoutes('*');
+  }
+}

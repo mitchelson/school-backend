@@ -3,7 +3,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
+import { Prisma, type Role } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
@@ -46,6 +47,7 @@ export class ClassesService {
     private prisma: PrismaService,
     private notifications: NotificationsService,
     private mpSeller: MpSellerService,
+    private audit: AuditService,
   ) {}
 
   async list(page = 1, limit = 20, status?: string, studentId?: string) {
@@ -70,26 +72,45 @@ export class ClassesService {
     ]);
 
     let enrollmentMap: Record<string, { status: string; enrollmentSource: string }> = {};
+    let waitlistMap: Record<string, { status: string; position: number }> = {};
     if (studentId) {
-      const enrollments = await this.prisma.classAttendance.findMany({
-        where: {
-          studentId,
-          classInstanceId: { in: classes.map((c) => c.id) },
-          status: { not: 'cancelled' },
-        },
-        select: { classInstanceId: true, status: true, enrollmentSource: true },
-      });
+      const classIds = classes.map((c) => c.id);
+      const [enrollments, waitlistEntries] = await Promise.all([
+        this.prisma.classAttendance.findMany({
+          where: {
+            studentId,
+            classInstanceId: { in: classIds },
+            status: { not: 'cancelled' },
+          },
+          select: { classInstanceId: true, status: true, enrollmentSource: true },
+        }),
+        this.prisma.classWaitlistEntry.findMany({
+          where: {
+            studentId,
+            classInstanceId: { in: classIds },
+            status: 'waiting',
+          },
+          select: { classInstanceId: true, status: true, position: true },
+        }),
+      ]);
       enrollmentMap = Object.fromEntries(
         enrollments.map((e) => [
           e.classInstanceId,
           { status: e.status, enrollmentSource: e.enrollmentSource },
         ]),
       );
+      waitlistMap = Object.fromEntries(
+        waitlistEntries.map((w) => [
+          w.classInstanceId,
+          { status: w.status, position: w.position },
+        ]),
+      );
     }
 
     const data = classes.map((c) => {
       const en = enrollmentMap[c.id];
-      return this.mapClassRow(c, en);
+      const wl = waitlistMap[c.id];
+      return this.mapClassRow(c, en, wl);
     });
 
     return { data, total, page, limit: take, hasMore: skip + take < total };
@@ -205,7 +226,11 @@ export class ClassesService {
     };
   }
 
-  async cancel(id: string, dto: CancelClassDto = {}) {
+  async cancel(
+    id: string,
+    dto: CancelClassDto = {},
+    actor?: { id: string; role: Role },
+  ) {
     const cls = await this.ensureExists(id);
     const scope: ClassMutationScope = dto.scope ?? 'single';
 
@@ -248,6 +273,17 @@ export class ClassesService {
         'Aula cancelada',
         `A aula ${target.name} de ${formatDateOnly(target.date)} às ${target.startTime} foi cancelada.`,
       );
+    }
+
+    if (actor) {
+      await this.audit.log({
+        actorId: actor.id,
+        actorRole: actor.role,
+        action: 'class.cancelled',
+        entityType: 'class',
+        entityId: id,
+        metadata: { scope, cancelledCount: targets.length } as Prisma.InputJsonValue,
+      });
     }
 
     return { success: true, cancelledCount: targets.length };
@@ -366,6 +402,7 @@ export class ClassesService {
       series?: { scheduleType: string; weekdays: unknown } | null;
     },
     enrollment?: { status: string; enrollmentSource: string } | null,
+    waitlist?: { status: string; position: number } | null,
   ) {
     const count = c._count?.attendances ?? 0;
     return {
@@ -386,6 +423,8 @@ export class ClassesService {
       availableSlots: c.maxStudents - count,
       enrollmentStatus: enrollment?.status ?? null,
       enrollmentSource: enrollment?.enrollmentSource ?? null,
+      waitlistStatus: waitlist?.status ?? null,
+      waitlistPosition: waitlist?.position ?? null,
       seriesScheduleType: c.series?.scheduleType ?? null,
       seriesWeekdays: c.series?.weekdays ?? null,
       seriesWeekdayLabels: this.weekdayLabelsFromJson(c.series?.weekdays),

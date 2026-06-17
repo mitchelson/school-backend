@@ -32,23 +32,33 @@ Sem `BETTER_STACK_SOURCE_TOKEN`, a API continua funcionando e loga só no stdout
 ## 3. O que é enviado
 
 - Logs do NestJS (`Logger` em services, filters, etc.)
-- Requisições HTTP (método, URL, status, duração)
-- Erros não tratados via `HttpExceptionFilter`
+- Requisições HTTP via middleware (`http_method`, `http_path`, `http_status`, `duration_ms`, `client_ip`)
+- Erros 5xx via `HttpExceptionFilter` (mensagem + stack estruturados)
 - Mensagens de bootstrap (porta, ambiente)
 
-Campos estruturados nas requisições: `http_method`, `http_url`, `http_status`, `duration_ms`, `service`, `nest_context`.
+Campos comuns: `service`, `environment`, `nest_context`.
 
-## 4. Uptime monitor
+## 4. Health checks (load balancer / uptime)
+
+| Endpoint | Uso | Resposta |
+|----------|-----|----------|
+| `GET /api/v1/health/live` | Liveness — processo no ar | Sempre `200` + `{ status: "ok" }` |
+| `GET /api/v1/health/ready` | Readiness — DB conectado | `200` se DB OK, `503` se degradado |
+| `GET /api/v1/health` | Uptime monitor geral | `200` se saudável, `503` se degradado |
+
+**Nginx / load balancer:** use `/health/live` para probe de processo e `/health/ready` para tráfego (só roteia quando DB responde).
+
+## 5. Uptime monitor
 
 1. [Better Stack → Uptime → Monitors](https://uptime.betterstack.com/)
 2. **Create monitor** → HTTP(s)
-3. URL: `https://api.ct095.com/api/v1/health`
+3. URL: `https://api.ct095.com/api/v1/health/ready`
 4. Intervalo sugerido: 1–3 min
 5. Alertas: e-mail / Slack conforme preferência
 
-O endpoint `/health` retorna `status: ok` quando DB e schema estão OK.
+O endpoint `/health/ready` retorna HTTP `503` quando o PostgreSQL não responde.
 
-## 5. Deploy na VPS
+## 6. Deploy na VPS
 
 Após adicionar as variáveis em `/opt/school-backend/.env.production`:
 
@@ -65,9 +75,10 @@ pm2 restart school-api
 
 ## 6. Verificar
 
-1. Faça uma requisição: `curl https://api.ct095.com/api/v1/health`
-2. No painel Better Stack → **Live tail** do source **CT095 School API**
-3. Deve aparecer log HTTP e resposta do health check
+1. Liveness: `curl https://api.ct095.com/api/v1/health/live`
+2. Readiness: `curl -i https://api.ct095.com/api/v1/health/ready`
+3. No painel Better Stack → **Live tail** do source **CT095 School API**
+4. Deve aparecer log HTTP estruturado nas requisições
 
 ## 7. Desenvolvimento local
 

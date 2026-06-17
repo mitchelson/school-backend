@@ -1,11 +1,8 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
-import { HttpExceptionFilter } from './common/filters/http-exception.filter';
-import { BetterStackNestLogger } from './infrastructure/observability/better-stack-nest.logger';
-import { createApplicationLogger } from './infrastructure/observability/create-application-logger';
+import { ApplicationLoggerService } from './infrastructure/observability/application-logger.service';
 import { assertProductionSecrets } from './config/production-secrets';
 
 async function bootstrap() {
@@ -16,13 +13,12 @@ async function bootstrap() {
   });
 
   const config = app.get(ConfigService);
-  const logger = createApplicationLogger(config);
+  const appLogger = app.get(ApplicationLoggerService);
+  const logger = appLogger.nestLogger;
   app.useLogger(logger);
 
   const flushBetterStack = () => {
-    if (logger instanceof BetterStackNestLogger) {
-      void logger.flush().catch(() => undefined);
-    }
+    void appLogger.flush().catch(() => undefined);
   };
   process.once('SIGTERM', flushBetterStack);
   process.once('SIGINT', flushBetterStack);
@@ -56,24 +52,6 @@ async function bootstrap() {
       transform: true,
     }),
   );
-
-  app.useGlobalFilters(new HttpExceptionFilter());
-
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    const start = Date.now();
-    res.on('finish', () => {
-      const durationMs = Date.now() - start;
-      if (logger instanceof BetterStackNestLogger) {
-        logger.logHttp(req.method, req.originalUrl, res.statusCode, durationMs);
-        return;
-      }
-      logger.log(
-        `${req.method} ${req.originalUrl} ${res.statusCode} ${durationMs}ms`,
-        'HTTP',
-      );
-    });
-    next();
-  });
 
   const port = Number(config.get<string>('PORT')) || 3002;
   const nodeEnv = process.env.NODE_ENV ?? 'development';

@@ -5,6 +5,7 @@ import { FirebaseAuthGuard } from '../../common/guards/firebase-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { Role } from '@prisma/client';
 
 @Controller('credits')
 @UseGuards(FirebaseAuthGuard)
@@ -26,7 +27,14 @@ export class CreditsController {
   @Patch('pricing')
   @UseGuards(RolesGuard)
   @Roles('admin')
-  updatePricing(@Body() dto: UpdateCreditPriceDto) {
-    return this.creditsService.setUnitPriceInCents(dto.unitPriceInCents);
+  updatePricing(
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('role') actorRole: Role,
+    @Body() dto: UpdateCreditPriceDto,
+  ) {
+    return this.creditsService.setUnitPriceInCents(dto.unitPriceInCents, {
+      id: actorId,
+      role: actorRole,
+    });
   }
 }

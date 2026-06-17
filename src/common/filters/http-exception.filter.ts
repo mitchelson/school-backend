@@ -1,16 +1,18 @@
 import {
-  ExceptionFilter,
-  Catch,
   ArgumentsHost,
+  Catch,
+  ExceptionFilter,
   HttpException,
   HttpStatus,
-  Logger,
+  Injectable,
 } from '@nestjs/common';
-import { Response, Request } from 'express';
+import { Request, Response } from 'express';
+import { ApplicationLoggerService } from '../../infrastructure/observability/application-logger.service';
 
 @Catch()
+@Injectable()
 export class HttpExceptionFilter implements ExceptionFilter {
-  private readonly logger = new Logger(HttpExceptionFilter.name);
+  constructor(private readonly appLogger: ApplicationLoggerService) {}
 
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
@@ -22,13 +24,19 @@ export class HttpExceptionFilter implements ExceptionFilter {
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
 
-    if (!(exception instanceof HttpException)) {
-      const errMsg = exception instanceof Error ? exception.message : String(exception);
-      const stack = exception instanceof Error ? exception.stack : undefined;
-      this.logger.error(
-        `${request.method} ${request.originalUrl} → 500: ${errMsg}`,
-        stack,
-      );
+    if (status >= 500) {
+      const line = `${request.method} ${request.originalUrl} → ${status}`;
+      const fields: Record<string, string | number | boolean> = {
+        http_method: request.method,
+        http_path: request.originalUrl,
+        http_status: status,
+        error_message:
+          exception instanceof Error ? exception.message : String(exception),
+      };
+      if (exception instanceof Error && exception.stack) {
+        fields.error_stack = exception.stack;
+      }
+      this.appLogger.logStructured('error', line, fields, HttpExceptionFilter.name);
     }
 
     const message =

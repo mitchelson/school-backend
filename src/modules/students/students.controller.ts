@@ -7,6 +7,7 @@ import { FirebaseAuthGuard } from '../../common/guards/firebase-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { Role } from '@prisma/client';
 
 @Controller('students')
 @UseGuards(FirebaseAuthGuard, RolesGuard)
@@ -53,7 +54,11 @@ export class StudentsController {
 
   @Patch(':id/deactivate')
   @Roles('admin')
-  deactivate(@Param('id') id: string) {
-    return this.studentsService.deactivate(id);
+  deactivate(
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('role') actorRole: Role,
+    @Param('id') id: string,
+  ) {
+    return this.studentsService.deactivate(id, { id: actorId, role: actorRole });
   }
 }

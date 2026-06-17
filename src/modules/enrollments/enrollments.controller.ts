@@ -31,4 +31,12 @@ export class EnrollmentsController {
   ) {
     return this.enrollmentsService.cancelEnrollment(userId, classId);
   }
+
+  @Delete(':classId/waitlist')
+  cancelWaitlist(
+    @CurrentUser('id') userId: string,
+    @Param('classId') classId: string,
+  ) {
+    return this.enrollmentsService.cancelWaitlist(userId, classId);
+  }
 }

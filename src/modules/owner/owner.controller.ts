@@ -54,6 +54,14 @@ export class OwnerController {
     return this.ownerService.updateUserRole(actorId, userId, dto.role);
   }
 
+  @Get('audit-logs')
+  listAuditLogs(@Query() query: OwnerListQueryDto) {
+    return this.ownerService.listAuditLogs(
+      Number(query.page) || 1,
+      Number(query.limit) || 50,
+    );
+  }
+
   @Get('mp-accounts')
   listMpAccounts() {
     return this.ownerService.listMpAccounts();

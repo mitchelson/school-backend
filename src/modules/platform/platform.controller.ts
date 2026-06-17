@@ -9,16 +9,20 @@ import {
 } from '@nestjs/common';
 import { PlatformSettingsService } from '../marketplace/platform-settings.service';
 import { SplitCalculatorService } from '../marketplace/split-calculator.service';
+import { AuditService } from '../audit/audit.service';
 import { UpdatePlatformFeeDto } from './dto/platform-fee.dto';
 import { FirebaseAuthGuard } from '../../common/guards/firebase-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { Role, Prisma } from '@prisma/client';
 
 @Controller('platform')
 export class PlatformController {
   constructor(
     private settings: PlatformSettingsService,
     private splitCalc: SplitCalculatorService,
+    private audit: AuditService,
   ) {}
 
   @Get('fee')
@@ -58,7 +62,11 @@ export class PlatformController {
   @Patch('fee')
   @UseGuards(FirebaseAuthGuard, RolesGuard)
   @Roles('owner')
-  async updateFee(@Body() dto: UpdatePlatformFeeDto) {
+  async updateFee(
+    @CurrentUser('id') actorId: string,
+    @CurrentUser('role') actorRole: Role,
+    @Body() dto: UpdatePlatformFeeDto,
+  ) {
     const hasAny =
       dto.platformFeePercent !== undefined ||
       dto.mpFeePercentPix !== undefined ||
@@ -83,6 +91,14 @@ export class PlatformController {
         dto.mpFeePercentCardInstallments,
       );
     }
+
+    await this.audit.log({
+      actorId,
+      actorRole: actorRole,
+      action: 'platform.fee_updated',
+      entityType: 'platform_setting',
+      metadata: dto as Prisma.InputJsonValue,
+    });
 
     return this.getFee();
   }
