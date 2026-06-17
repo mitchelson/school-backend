@@ -12,7 +12,8 @@ env:
   FIREBASE_PROJECT_ID: test-project
   FIREBASE_CLIENT_EMAIL: test@test.iam.gserviceaccount.com
   FIREBASE_PRIVATE_KEY: test-key
-  CRON_SECRET: test-cron-secret
+  CRON_SECRET: test-cron-secret-32-characters-min
+  PII_ENCRYPTION_KEY: test-pii-encryption-key-32chars!!
 
 jobs:
   test-and-build:
@@ -46,3 +47,4 @@ jobs:
       - run: npx prisma migrate deploy
       - run: npm run build
       - run: npm test
+      - run: npm run test:e2e

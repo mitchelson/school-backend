@@ -11,7 +11,4 @@ export class RegisterDto {
   @IsString()
   @Matches(/^\d{10,11}$/, { message: 'Telefone deve ter 10 ou 11 dígitos' })
   phone: string;
-
-  @IsString()
-  firebaseUid: string;
 }

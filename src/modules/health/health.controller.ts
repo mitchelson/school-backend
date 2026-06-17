@@ -1,22 +1,37 @@
 import { Controller, Get } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
 @Controller('health')
+@SkipThrottle()
 export class HealthController {
   private readonly startedAt = new Date();
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private config: ConfigService,
+  ) {}
 
   @Get()
   async check() {
-    let dbOk = false;
-    let platformSettingsTable = false;
-    let userMpColumns = false;
+    const isProduction = this.config.get<string>('NODE_ENV') === 'production';
 
+    let dbOk = false;
     try {
       await this.prisma.$queryRaw`SELECT 1`;
       dbOk = true;
     } catch {}
+
+    if (isProduction) {
+      return {
+        status: dbOk ? 'ok' : 'degraded',
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    let platformSettingsTable = false;
+    let userMpColumns = false;
 
     if (dbOk) {
       try {

@@ -178,8 +178,10 @@ export class MercadoPagoGateway {
   }
 
   validateSignature(headers: Record<string, string | undefined>, dataId: string): boolean {
-    const secret = this.config.get<string>('MERCADOPAGO_WEBHOOK_SECRET');
-    if (!secret) return true;
+    const secret = this.config.get<string>('MERCADOPAGO_WEBHOOK_SECRET')?.trim();
+    if (!secret) {
+      return process.env.NODE_ENV !== 'production';
+    }
 
     const normalizedHeaders = Object.fromEntries(
       Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]),

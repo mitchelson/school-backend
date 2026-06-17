@@ -232,17 +232,16 @@ export class PaymentCheckoutService {
    * Called by webhook handler or immediately after card approval.
    */
   async fulfillPayment(paymentId: string) {
-    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
-    if (!payment || payment.status === 'paid') return; // Idempotent
-
     const now = new Date();
 
-    await this.prisma.$transaction(async (tx) => {
-      // Mark as paid
-      await tx.payment.update({
-        where: { id: paymentId },
+    const fulfilled = await this.prisma.$transaction(async (tx) => {
+      const claim = await tx.payment.updateMany({
+        where: { id: paymentId, status: 'pending' },
         data: { status: 'paid', paidAt: now },
       });
+      if (claim.count === 0) return false;
+
+      const payment = await tx.payment.findUniqueOrThrow({ where: { id: paymentId } });
 
       if (payment.purpose === 'plan' && payment.planId) {
         const existing = await tx.subscription.findUnique({
@@ -266,16 +265,19 @@ export class PaymentCheckoutService {
           },
         });
       } else if (payment.purpose === 'credits' && payment.creditQuantity) {
-        // Add credits to balance
         await tx.studentTokenBalance.upsert({
           where: { studentId: payment.studentId },
           update: { balance: { increment: payment.creditQuantity } },
           create: { studentId: payment.studentId, balance: payment.creditQuantity },
         });
       }
+
+      return payment;
     });
 
-    this.logger.log(`Payment ${paymentId} fulfilled (${payment.purpose})`);
+    if (!fulfilled) return;
+
+    this.logger.log(`Payment ${paymentId} fulfilled (${fulfilled.purpose})`);
   }
 
   /**

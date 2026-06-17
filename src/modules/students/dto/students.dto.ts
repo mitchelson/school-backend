@@ -9,9 +9,6 @@ export class CreateStudentDto {
 
   @IsString() @Matches(/^\d{10,11}$/)
   phone: string;
-
-  @IsString()
-  firebaseUid: string;
 }
 
 export class UpdateStudentDto {

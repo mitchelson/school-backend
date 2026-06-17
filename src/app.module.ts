@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { getEnvFilePaths } from './config/env-files';
+import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { FirebaseModule } from './infrastructure/firebase/firebase.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -27,6 +30,18 @@ import { EmailModule } from './infrastructure/email/email.module';
       isGlobal: true,
       envFilePath: getEnvFilePaths(),
     }),
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const isTest = config.get<string>('NODE_ENV') === 'test';
+        const defaultLimit = Number(config.get<string>('THROTTLE_LIMIT')) || (isTest ? 10_000 : 120);
+        const authLimit = Number(config.get<string>('THROTTLE_AUTH_LIMIT')) || (isTest ? 10_000 : 20);
+        return [
+          { name: 'default', ttl: 60_000, limit: defaultLimit },
+          { name: 'auth', ttl: 60_000, limit: authLimit },
+        ];
+      },
+    }),
     EmailModule,
     PrismaModule,
     FirebaseModule,
@@ -46,6 +61,12 @@ import { EmailModule } from './infrastructure/email/email.module';
     DashboardModule,
     HealthModule,
     SubscriptionsModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: AppThrottlerGuard,
+    },
   ],
 })
 export class AppModule {}

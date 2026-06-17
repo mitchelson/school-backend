@@ -247,11 +247,15 @@ export class MpOAuthService {
     this.logger.log(`Mercado Pago conectado (admin=${adminId}, mp_user=${data.user_id})`);
   }
 
-  getFrontendRedirectUrl(success: boolean): string {
+  getFrontendRedirectUrl(success: boolean, code?: string): string {
     const base =
       this.config.get<string>('APP_BASE_URL')?.replace(/\/$/, '') ??
       'http://localhost:3000';
-    return `${base}/admin/configuracoes?mp=${success ? 'connected' : 'error'}`;
+    if (success) {
+      return `${base}/admin/configuracoes?mp=connected`;
+    }
+    const errorCode = code ?? 'unknown';
+    return `${base}/admin/configuracoes?mp=error&code=${encodeURIComponent(errorCode)}`;
   }
 
   private verifyOAuthState(

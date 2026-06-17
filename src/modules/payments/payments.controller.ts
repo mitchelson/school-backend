@@ -1,6 +1,8 @@
 import {
-  Controller, Post, Get, Body, Query, Req, UseGuards, Param,
+  Controller, Post, Get, Body, Query, Req, UseGuards, Param, NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { SkipThrottle } from '@nestjs/throttler';
 import { PaymentCheckoutService } from './payment-checkout.service';
 import { PaymentWebhookService } from './payment-webhook.service';
 import { SubscribeDto, PurchaseCreditsDto } from './dto/payments.dto';
@@ -16,6 +18,7 @@ export class PaymentsController {
     private checkoutService: PaymentCheckoutService,
     private webhookService: PaymentWebhookService,
     private prisma: PrismaService,
+    private config: ConfigService,
   ) {}
 
   @Post('subscribe')
@@ -140,6 +143,13 @@ export class PaymentsController {
   @Post(':id/dev-confirm')
   @UseGuards(FirebaseAuthGuard)
   async devConfirm(@CurrentUser('id') userId: string, @Param('id') id: string) {
+    const isDevSimulate =
+      process.env.NODE_ENV !== 'production' &&
+      this.config.get<string>('MP_DEV_SIMULATE') === 'true';
+    if (!isDevSimulate) {
+      throw new NotFoundException();
+    }
+
     const payment = await this.prisma.payment.findFirst({
       where: { id, studentId: userId, status: 'pending' },
     });
@@ -154,6 +164,7 @@ export class PaymentsController {
  * Must receive raw body for HMAC validation.
  */
 @Controller('webhooks')
+@SkipThrottle()
 export class WebhooksController {
   constructor(private webhookService: PaymentWebhookService) {}
 

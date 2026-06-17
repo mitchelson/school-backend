@@ -6,8 +6,10 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { BetterStackNestLogger } from './infrastructure/observability/better-stack-nest.logger';
 import { createApplicationLogger } from './infrastructure/observability/create-application-logger';
+import { assertProductionSecrets } from './config/production-secrets';
 
 async function bootstrap() {
+  assertProductionSecrets();
   const app = await NestFactory.create(AppModule, {
     rawBody: true,
     bufferLogs: true,

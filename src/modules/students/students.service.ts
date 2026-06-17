@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CreateStudentDto, UpdateStudentDto } from './dto/students.dto';
+import { createPendingFirebaseUid } from '../auth/pending-firebase-uid';
 
 const SELECT_FIELDS = {
   id: true,
@@ -60,11 +61,17 @@ export class StudentsService {
   }
 
   async create(dto: CreateStudentDto) {
+    const email = dto.email.trim().toLowerCase();
+    const existing = await this.prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      throw new ConflictException('Email já cadastrado');
+    }
+
     return this.prisma.user.create({
       data: {
-        firebaseUid: dto.firebaseUid,
-        fullName: dto.fullName,
-        email: dto.email,
+        firebaseUid: createPendingFirebaseUid(),
+        fullName: dto.fullName.trim(),
+        email,
         phone: dto.phone,
         role: 'aluno',
       },

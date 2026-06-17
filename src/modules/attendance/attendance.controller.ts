@@ -11,6 +11,7 @@ export class AttendanceController {
   constructor(private attendanceService: AttendanceService) {}
 
   @Post(':classId/checkin')
+  @Roles('aluno')
   checkin(
     @CurrentUser('id') userId: string,
     @Param('classId') classId: string,

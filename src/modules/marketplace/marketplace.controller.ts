@@ -4,6 +4,10 @@ import { MpOAuthService } from './mp-oauth.service';
 import { MpSellerService } from './mp-seller.service';
 import { PlatformSettingsService } from './platform-settings.service';
 import { SplitCalculatorService } from './split-calculator.service';
+import {
+  mapOAuthErrorToCode,
+  MP_OAUTH_CALLBACK_CODES,
+} from './mp-oauth-callback-codes';
 import { FirebaseAuthGuard } from '../../common/guards/firebase-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -97,20 +101,22 @@ export class MarketplaceController {
       if (oauthError) {
         throw new Error(oauthErrorDescription || oauthError);
       }
-      if (!code || !state) throw new Error('Parâmetros ausentes');
+      if (!code || !state) {
+        res.redirect(
+          this.oauth.getFrontendRedirectUrl(false, MP_OAUTH_CALLBACK_CODES.MISSING_PARAMS),
+        );
+        return;
+      }
       await this.oauth.handleCallback(code, state);
       res.redirect(this.oauth.getFrontendRedirectUrl(true));
     } catch (err) {
-      const message =
+      const code =
         err instanceof BadRequestException
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : 'Falha na autorização Mercado Pago';
-      const base = this.oauth.getFrontendRedirectUrl(false);
-      res.redirect(
-        `${base}&reason=${encodeURIComponent(message.slice(0, 200))}`,
-      );
+          ? mapOAuthErrorToCode(err.message)
+          : oauthError
+            ? MP_OAUTH_CALLBACK_CODES.OAUTH_DENIED
+            : mapOAuthErrorToCode(err);
+      res.redirect(this.oauth.getFrontendRedirectUrl(false, code));
     }
   }
 }
